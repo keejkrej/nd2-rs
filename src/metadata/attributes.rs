@@ -3,19 +3,32 @@ use crate::parse::ClxValue;
 use crate::types::{Attributes, CompressionType, PixelDataType};
 
 pub fn parse_attributes(clx: ClxValue) -> Result<Attributes> {
-    let obj = clx
+    let root = clx
         .as_object()
         .ok_or_else(|| Nd2Error::MetadataParse("Expected object for attributes".to_string()))?;
 
+    // The attributes are nested inside "SLxImageAttributes" key
+    let obj = root
+        .get("SLxImageAttributes")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| Nd2Error::MetadataParse("Missing SLxImageAttributes object".to_string()))?;
+
     let get_u32 = |key: &str| -> Result<u32> {
+        // Try the key as-is first, then try with type suffixes
         obj.get(key)
-            .and_then(|v| v.as_u64())
+            .or_else(|| obj.get(&format!("{}_u32", key)))
+            .or_else(|| obj.get(&format!("{}_i32", key)))
+            .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|i| i as u64)))
             .map(|v| v as u32)
             .ok_or_else(|| Nd2Error::MetadataParse(format!("Missing or invalid {}", key)))
     };
 
     let get_opt_u32 = |key: &str| -> Option<u32> {
-        obj.get(key).and_then(|v| v.as_u64()).map(|v| v as u32)
+        obj.get(key)
+            .or_else(|| obj.get(&format!("{}_u32", key)))
+            .or_else(|| obj.get(&format!("{}_i32", key)))
+            .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|i| i as u64)))
+            .map(|v| v as u32)
     };
 
     let get_opt_f64 = |key: &str| -> Option<f64> { obj.get(key).and_then(|v| v.as_f64()) };

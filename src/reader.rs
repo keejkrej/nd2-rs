@@ -130,7 +130,12 @@ impl Nd2File {
         reader.seek(SeekFrom::Start(0))?;
 
         let mut header = [0u8; 112]; // 4 + 4 + 8 + 32 + 64
-        reader.read_exact(&mut header)?;
+        reader.read_exact(&mut header).map_err(|e| {
+            Nd2Error::InvalidFormat(format!(
+                "Failed to read file header (expected 112 bytes): {}",
+                e
+            ))
+        })?;
 
         let magic = u32::from_le_bytes([header[0], header[1], header[2], header[3]]);
 

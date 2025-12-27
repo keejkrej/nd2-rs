@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use nd2_rs::{Nd2File, Result};
 use std::path::PathBuf;
 
@@ -6,38 +6,46 @@ use std::path::PathBuf;
 #[command(name = "nd2-rs")]
 #[command(version, about = "Read Nikon ND2 microscopy files", long_about = None)]
 struct Cli {
-    /// Path to the ND2 file
-    #[arg(short, long, value_name = "FILE")]
-    input: PathBuf,
+    #[command(subcommand)]
+    command: Commands,
+}
 
+#[derive(Subcommand)]
+enum Commands {
     /// Display file information and metadata
-    #[arg(long)]
-    info: bool,
+    Info {
+        /// Path to the ND2 file
+        #[arg(short, long, value_name = "FILE")]
+        input: PathBuf,
 
-    /// Output in JSON format
-    #[arg(long)]
-    json: bool,
-
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
     /// List all chunks in the file
-    #[arg(long)]
-    chunks: bool,
+    Chunks {
+        /// Path to the ND2 file
+        #[arg(short, long, value_name = "FILE")]
+        input: PathBuf,
+
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Open the ND2 file
-    let mut nd2 = Nd2File::open(&cli.input)?;
-
-    if cli.chunks {
-        // List all chunks
-        print_chunks(&nd2, cli.json)?;
-    } else if cli.info {
-        // Display file information
-        print_info(&mut nd2, cli.json)?;
-    } else {
-        // Default: show basic info
-        print_info(&mut nd2, cli.json)?;
+    match cli.command {
+        Commands::Info { input, json } => {
+            let mut nd2 = Nd2File::open(&input)?;
+            print_info(&mut nd2, json)?;
+        }
+        Commands::Chunks { input, json } => {
+            let nd2 = Nd2File::open(&input)?;
+            print_chunks(&nd2, json)?;
+        }
     }
 
     Ok(())
