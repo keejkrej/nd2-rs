@@ -13,5 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `sizes()` – dimension sizes (P, T, C, Z, Y, X) from attributes and experiment
 - `loop_indices()` – sequence index → (P, T, C, Z) mapping in row-major order
 - `read_frame(index)` – read raw u16 pixels (C×Y×X) by sequence index
+- `read_frame_2d(p, t, c, z)` – read 2D Y×X frame at (P, T, C, Z)
 - Support for uncompressed and zlib-compressed image data
-- CLI: `--info`, `--info --json`, `--chunks`
+- CLI: `info <file>`, `info <file> --json`, `chunks <file>`
+- GitHub Actions CI: build/test (ubuntu, macos, windows), clippy
