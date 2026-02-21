@@ -111,7 +111,7 @@ ND2_TEST_FILE=/path/to/file.nd2 cargo test
 $env:ND2_TEST_FILE="D:\path\to\file.nd2"; cargo test
 ```
 
-CI downloads a sample ND2 from [OME](https://downloads.openmicroscopy.org/images/ND2/aryeh/) and runs all tests.
+CI runs build, unit tests, and clippy. Integration tests require a local ND2 file.
 
 ## Library Usage Examples
 
