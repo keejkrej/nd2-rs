@@ -116,3 +116,15 @@ pub struct CustomLoop {
     pub count: u32,
     pub nesting_level: u32,
 }
+
+impl ExpLoop {
+    pub fn count(&self) -> u32 {
+        match self {
+            ExpLoop::TimeLoop(t) => t.count,
+            ExpLoop::ZStackLoop(z) => z.count,
+            ExpLoop::XYPosLoop(xy) => xy.count,
+            ExpLoop::NETimeLoop(n) => n.count,
+            ExpLoop::CustomLoop(c) => c.count,
+        }
+    }
+}

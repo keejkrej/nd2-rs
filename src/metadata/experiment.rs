@@ -7,26 +7,48 @@ use crate::types::{
 };
 
 pub fn parse_experiment(clx: ClxValue) -> Result<Vec<ExpLoop>> {
+    parse_experiment_inner(clx, 0, Vec::new())
+}
+
+fn parse_experiment_inner(
+    clx: ClxValue,
+    level: u32,
+    mut dest: Vec<ExpLoop>,
+) -> Result<Vec<ExpLoop>> {
     let obj = clx
         .as_object()
         .ok_or_else(|| Nd2Error::MetadataParse("Expected object for experiment".to_string()))?;
 
-    let mut loops = Vec::new();
-
-    // Parse ppNextLevelEx array
-    if let Some(next_level) = obj.get("ppNextLevelEx") {
-        if let ClxValue::Array(arr) = next_level {
-            for item in arr {
-                if let Some(loop_obj) = item.as_object() {
-                    if let Some(exp_loop) = parse_single_loop(loop_obj)? {
-                        loops.push(exp_loop);
-                    }
-                }
-            }
+    if let Some(exp_loop) = parse_single_loop(obj)? {
+        if exp_loop.count() > 0 {
+            dest.push(exp_loop);
         }
     }
 
-    Ok(loops)
+    // Parse ppNextLevelEx - can be Array (v2) or Object/dict (v3)
+    if let Some(next_level) = obj.get("ppNextLevelEx") {
+        let items: Vec<&ClxValue> = match next_level {
+            ClxValue::Array(arr) => arr.iter().collect(),
+            ClxValue::Object(map) => map.values().collect(),
+            _ => Vec::new(),
+        };
+
+        for item in items {
+            let inner = match item {
+                ClxValue::Object(inner_obj) => {
+                    if let Some(slx) = inner_obj.get("SLxExperiment") {
+                        slx.clone()
+                    } else {
+                        item.clone()
+                    }
+                }
+                other => other.clone(),
+            };
+            dest = parse_experiment_inner(inner, level + 1, dest)?;
+        }
+    }
+
+    Ok(dest)
 }
 
 fn parse_single_loop(obj: &std::collections::HashMap<String, ClxValue>) -> Result<Option<ExpLoop>> {
@@ -38,7 +60,7 @@ fn parse_single_loop(obj: &std::collections::HashMap<String, ClxValue>) -> Resul
 
     let get_bool = |key: &str| -> Option<bool> { obj.get(key).and_then(|v| v.as_bool()) };
 
-    let loop_type = get_u32("uiLoopType");
+    let loop_type = get_u32("uiLoopType").or_else(|| get_u32("eType"));
     let count = get_u32("uiCount").unwrap_or(0);
     let nesting_level = get_u32("uiNestingLevel").unwrap_or(0);
 
@@ -75,43 +97,57 @@ fn parse_single_loop(obj: &std::collections::HashMap<String, ClxValue>) -> Resul
             })))
         }
         Some(2) => {
-            // XYPosLoop
+            // XYPosLoop - points in pPeriod or uLoopPars.Points
             let is_setting_z = get_bool("bIsSettingZ").unwrap_or(false);
             let mut points = Vec::new();
 
-            if let Some(pos_list) = obj.get("pPeriod") {
-                if let ClxValue::Array(arr) = pos_list {
-                    for pos_item in arr {
-                        if let Some(pos_obj) = pos_item.as_object() {
-                            let x = pos_obj
-                                .get("dPosX")
-                                .and_then(|v| v.as_f64())
-                                .unwrap_or(0.0);
-                            let y = pos_obj
-                                .get("dPosY")
-                                .and_then(|v| v.as_f64())
-                                .unwrap_or(0.0);
-                            let z = pos_obj
-                                .get("dPosZ")
-                                .and_then(|v| v.as_f64())
-                                .unwrap_or(0.0);
-                            let pfs_offset =
-                                pos_obj.get("dPFSOffset").and_then(|v| v.as_f64());
-                            let name = pos_obj
-                                .get("wszName")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string());
+            let pos_list = obj.get("pPeriod").or_else(|| {
+                obj.get("uLoopPars")
+                    .and_then(|u| u.as_object())
+                    .and_then(|u| u.get("Points"))
+            });
+            if let Some(pos_list) = pos_list {
+                let pos_items: Vec<&ClxValue> = match pos_list {
+                    ClxValue::Array(arr) => arr.iter().collect(),
+                    ClxValue::Object(map) => map.values().collect(),
+                    _ => Vec::new(),
+                };
+                for pos_item in pos_items {
+                    if let Some(pos_obj) = pos_item.as_object() {
+                        let x = pos_obj
+                            .get("dPosX")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        let y = pos_obj
+                            .get("dPosY")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        let z = pos_obj
+                            .get("dPosZ")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        let pfs_offset =
+                            pos_obj.get("dPFSOffset").and_then(|v| v.as_f64());
+                        let name = pos_obj
+                            .get("wszName")
+                            .or_else(|| pos_obj.get("dPosName"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string());
 
-                            points.push(Position {
-                                stage_position_um: StagePosition { x, y, z },
-                                pfs_offset,
-                                name,
-                            });
-                        }
+                        points.push(Position {
+                            stage_position_um: StagePosition { x, y, z },
+                            pfs_offset,
+                            name,
+                        });
                     }
                 }
             }
 
+            let count = if points.is_empty() {
+                count
+            } else {
+                points.len() as u32
+            };
             let params = XYPosLoopParams {
                 is_setting_z,
                 points,

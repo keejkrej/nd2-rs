@@ -4,14 +4,17 @@ Pure Rust library for reading Nikon ND2 microscopy files.
 
 ## Overview
 
-`nd2-rs` is a Rust implementation for reading metadata from modern ND2 files (versions 2.0, 2.1, and 3.0) created by Nikon NIS Elements software. This library focuses on metadata extraction and does not yet support image data decoding.
+`nd2-rs` is a Rust implementation for reading metadata and image data from modern ND2 files (versions 2.0, 2.1, and 3.0) created by Nikon NIS Elements software.
 
 ## Features
 
-- Read ND2 file metadata
+- Read ND2 file metadata and image pixel data
 - Support for modern ND2 formats (v2.0, v2.1, v3.0)
+- `sizes()` – dimension sizes (P, T, C, Z, Y, X)
+- `loop_indices()` – P/T/C/Z mapping for each frame
+- `read_frame(index)` – read raw pixels (u16, C×Y×X) by sequence index
 - CLX Lite binary format parser
-- Zlib decompression support
+- Uncompressed and zlib-compressed image data
 - Serde serialization support
 
 ## Installation
@@ -21,6 +24,13 @@ Add this to your `Cargo.toml`:
 ```toml
 [dependencies]
 nd2-rs = "0.1.0"
+```
+
+Or from git:
+
+```toml
+[dependencies]
+nd2-rs = { git = "https://github.com/keejkrej/nd2-rs" }
 ```
 
 ## Usage
@@ -34,23 +44,25 @@ fn main() -> Result<()> {
     // Get file version
     println!("Version: {:?}", nd2.version());
 
+    // Get dimension sizes (P, T, C, Z, Y, X)
+    let sizes = nd2.sizes()?;
+    println!("Sizes: {:?}", sizes);
+
+    // Loop indices: seq_index -> (P, T, C, Z)
+    let loop_indices = nd2.loop_indices()?;
+    println!("Frame 0 coords: {:?}", loop_indices[0]);
+
+    // Read a single frame by sequence index (returns C×Y×X u16 pixels)
+    let pixels = nd2.read_frame(0)?;
+
     // Get image attributes
     let attrs = nd2.attributes()?;
     println!("Dimensions: {}x{}", attrs.width_px.unwrap_or(0), attrs.height_px);
     println!("Channels: {}", attrs.component_count);
-    println!("Frames: {}", attrs.sequence_count);
 
-    // Get text info
+    // Get text info and experiment loops
     let text_info = nd2.text_info()?;
-    if let Some(description) = &text_info.description {
-        println!("Description: {}", description);
-    }
-
-    // Get experiment loops (time-lapse, z-stack, etc.)
     let experiment = nd2.experiment()?;
-    for exp_loop in experiment {
-        println!("{:?}", exp_loop);
-    }
 
     Ok(())
 }
@@ -113,9 +125,8 @@ For detailed technical documentation about the file format and how the library w
 
 ## Limitations
 
-This is an early version focused on metadata readout. Not yet implemented:
+Not yet implemented:
 
-- Image data decoding
 - Legacy ND2 format (JPEG2000-based, v1.0)
 - ROI and binary mask data
 - Frame-level metadata
