@@ -74,13 +74,13 @@ The `nd2-rs` command-line tool provides quick access to ND2 file metadata:
 
 ```bash
 # Display file information
-nd2-rs --input image.nd2 --info
+nd2-rs info image.nd2
 
 # Output as JSON
-nd2-rs --input image.nd2 --info --json
+nd2-rs info image.nd2 --json
 
 # List all chunks in the file
-nd2-rs --input image.nd2 --chunks
+nd2-rs chunks image.nd2
 ```
 
 ### Installation
@@ -92,7 +92,7 @@ cargo install --path .
 Or run directly:
 
 ```bash
-cargo run -- --input path/to/file.nd2 --info
+cargo run -- info path/to/file.nd2
 ```
 
 ## Library Usage Examples

@@ -15,8 +15,8 @@ enum Commands {
     /// Display file information and metadata
     Info {
         /// Path to the ND2 file
-        #[arg(short, long, value_name = "FILE")]
-        input: PathBuf,
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
 
         /// Output in JSON format
         #[arg(long)]
@@ -25,8 +25,8 @@ enum Commands {
     /// List all chunks in the file
     Chunks {
         /// Path to the ND2 file
-        #[arg(short, long, value_name = "FILE")]
-        input: PathBuf,
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
 
         /// Output in JSON format
         #[arg(long)]
@@ -38,12 +38,12 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Info { input, json } => {
-            let mut nd2 = Nd2File::open(&input)?;
+        Commands::Info { file, json } => {
+            let mut nd2 = Nd2File::open(&file)?;
             print_info(&mut nd2, json)?;
         }
-        Commands::Chunks { input, json } => {
-            let nd2 = Nd2File::open(&input)?;
+        Commands::Chunks { file, json } => {
+            let nd2 = Nd2File::open(&file)?;
             print_chunks(&nd2, json)?;
         }
     }
