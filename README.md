@@ -95,6 +95,24 @@ Or run directly:
 cargo run -- info path/to/file.nd2
 ```
 
+## Testing
+
+```bash
+cargo test
+```
+
+Without `ND2_TEST_FILE`, integration tests skip. To run full integration tests:
+
+```bash
+# Linux/macOS
+ND2_TEST_FILE=/path/to/file.nd2 cargo test
+
+# Windows
+$env:ND2_TEST_FILE="D:\path\to\file.nd2"; cargo test
+```
+
+CI downloads a sample ND2 from [OME](https://downloads.openmicroscopy.org/images/ND2/aryeh/) and runs all tests.
+
 ## Library Usage Examples
 
 Run the metadata reader example:

@@ -13,8 +13,6 @@ pub struct ChunkHeader {
 }
 
 impl ChunkHeader {
-    pub const SIZE: usize = 16; // 4 + 4 + 8
-
     /// Read chunk header from a reader
     pub fn read<R: Read>(reader: &mut R) -> Result<Self> {
         let magic = reader.read_u32::<LittleEndian>().map_err(|e| {

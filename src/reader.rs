@@ -8,7 +8,7 @@ use flate2::read::ZlibDecoder;
 use crate::chunk::{read_chunk, read_chunkmap, ChunkMap};
 use crate::constants::{JP2_MAGIC, ND2_CHUNK_MAGIC, ND2_FILE_SIGNATURE};
 use crate::error::{Nd2Error, Result};
-use crate::metadata::{parse_attributes, parse_experiment, parse_text_info};
+use crate::meta_parse::{parse_attributes, parse_experiment, parse_text_info};
 use crate::parse::ClxLiteParser;
 use crate::types::{Attributes, CompressionType, ExpLoop, TextInfo};
 

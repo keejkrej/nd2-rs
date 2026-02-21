@@ -1,5 +1,7 @@
 # Rust
 /target/
+/fixtures/
+
 **/*.rs.bk
 *.pdb
 Cargo.lock

@@ -9,7 +9,6 @@ use crate::error::{Nd2Error, Result};
 /// Parsed JSON-like value from CLX Lite format
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClxValue {
-    Null,
     Bool(bool),
     Int(i64),
     UInt(u64),
@@ -67,10 +66,6 @@ impl ClxValue {
         } else {
             None
         }
-    }
-
-    pub fn get(&self, key: &str) -> Option<&ClxValue> {
-        self.as_object()?.get(key)
     }
 }
 

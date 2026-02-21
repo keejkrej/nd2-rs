@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Test (no fixture)
+        run: cargo test --verbose
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Clippy
+        run: cargo clippy -- -D warnings
+
+  integration:
+    name: Integration (with fixture)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download ND2 fixture
+        run: |
+          mkdir -p fixtures
+          curl -sL -o fixtures/MeOh_high_fluo_003.nd2 \
+            "https://downloads.openmicroscopy.org/images/ND2/aryeh/MeOh_high_fluo_003.nd2"
+
+      - name: Integration tests
+        env:
+          ND2_TEST_FILE: ${{ github.workspace }}/fixtures/MeOh_high_fluo_003.nd2
+        run: cargo test --verbose

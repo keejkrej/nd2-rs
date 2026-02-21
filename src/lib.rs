@@ -23,7 +23,8 @@ pub mod types;
 mod constants;
 mod chunk;
 mod parse;
-mod metadata;
+#[path = "metadata/mod.rs"]
+mod meta_parse;
 mod reader;
 
 pub use error::{Nd2Error, Result};
