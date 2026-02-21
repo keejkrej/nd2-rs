@@ -203,7 +203,6 @@ impl ClxLiteParser {
         let value = self.parse_with_count(cursor, item_count)?;
 
         // Skip the item_count * 8 bytes of offset data
-        // Note: In Python implementation, this is handled after parsing
         cursor.set_position(cursor.position() + (item_count as u64 * 8));
 
         // Handle the case where all items have empty names (array-like)
@@ -237,8 +236,9 @@ fn looks_like_clx_lite(data: &[u8]) -> bool {
         return false;
     }
 
-    // Require non-empty names for standalone detection
-    if name_length == 0 {
+    // Require at least 2 UTF-16 chars for standalone detection.
+    // name_length <= 1 is often just empty/null and can falsely match (e.g. pItemValid).
+    if name_length <= 1 {
         return false;
     }
 

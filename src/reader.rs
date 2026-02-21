@@ -101,12 +101,17 @@ impl Nd2File {
                 let to_parse = if self.version.0 >= 3 {
                     match clx.as_object().and_then(|o| o.get("SLxExperiment")) {
                         Some(inner) if inner.as_object().is_some() => inner.clone(),
-                        _ => clx,
+                        _ => clx.clone(),
                     }
                 } else {
-                    clx
+                    clx.clone()
                 };
-                self.experiment = Some(parse_experiment(to_parse).unwrap_or_default());
+                let mut exp = parse_experiment(to_parse).unwrap_or_default();
+                // If unwrapped gave empty, try parsing root directly (some v3 files differ)
+                if exp.is_empty() && self.version.0 >= 3 {
+                    exp = parse_experiment(clx).unwrap_or_default();
+                }
+                self.experiment = Some(exp);
             }
         }
         Ok(self.experiment.as_ref().unwrap())
@@ -210,33 +215,24 @@ impl Nd2File {
         Ok(sizes)
     }
 
-    /// Loop indices for each frame: seq_index -> (P, T, C, Z) as axis name -> index.
+    /// Loop indices for each frame: seq_index -> axis name -> index.
+    /// Order follows experiment loop order (matching nd2-py).
     pub fn loop_indices(&mut self) -> Result<Vec<HashMap<String, usize>>> {
-        let sizes = self.sizes()?;
-        let n_pos = *sizes.get(AXIS_P).unwrap_or(&1);
-        let n_time = *sizes.get(AXIS_T).unwrap_or(&1);
-        let n_chan = *sizes.get(AXIS_C).unwrap_or(&1);
-        let n_z = *sizes.get(AXIS_Z).unwrap_or(&1);
+        let (axis_order, coord_shape) = self.coord_axis_order()?;
+        let total: usize = coord_shape.iter().product();
 
-        // Row-major order matching nd2-py: P (outer), T, C, Z (inner)
-        let total = n_pos * n_time * n_chan * n_z;
         let mut out = Vec::with_capacity(total);
+        let n = axis_order.len();
 
         for seq in 0..total {
             let mut idx = seq;
-            let z = idx % n_z;
-            idx /= n_z;
-            let c = idx % n_chan;
-            idx /= n_chan;
-            let t = idx % n_time;
-            idx /= n_time;
-            let p = idx % n_pos;
-
             let mut m = HashMap::new();
-            m.insert(AXIS_P.to_string(), p);
-            m.insert(AXIS_T.to_string(), t);
-            m.insert(AXIS_C.to_string(), c);
-            m.insert(AXIS_Z.to_string(), z);
+            // Unravel seq: innermost axis varies fastest
+            for i in (0..n).rev() {
+                let coord = idx % coord_shape[i];
+                idx /= coord_shape[i];
+                m.insert(axis_order[i].to_string(), coord);
+            }
             out.push(m);
         }
 
@@ -314,21 +310,115 @@ impl Nd2File {
         Ok(out)
     }
 
-    /// Read 2D Y×X frame at (p,t,c,z). Returns the Y×X pixels (first channel if multi-component).
+    /// Build axis order and coord shape from experiment (matching nd2-py).
+    /// Order: experiment loops (outer to inner) then C.
+    /// When experiment is empty, uses P,T,C,Z fallback.
+    fn coord_axis_order(&mut self) -> Result<(Vec<&'static str>, Vec<usize>)> {
+        let attrs = self.attributes()?.clone();
+        let exp = self.experiment()?.clone();
+        let n_chan = attrs.channel_count.unwrap_or(attrs.component_count) as usize;
+
+        let mut axis_order: Vec<&'static str> = Vec::new();
+        let mut coord_shape: Vec<usize> = Vec::new();
+
+        if exp.is_empty() {
+            // Fallback: P,T,C,Z (matches sizes() fallback)
+            let n_z = 1;
+            let n_pos = 1;
+            let total = attrs.sequence_count as usize;
+            let n_time = total / (n_pos * n_chan * n_z).max(1);
+            axis_order.extend([AXIS_P, AXIS_T, AXIS_C, AXIS_Z]);
+            coord_shape.extend([n_pos, n_time, n_chan, n_z]);
+        } else {
+            for loop_ in &exp {
+                match loop_ {
+                    crate::types::ExpLoop::TimeLoop(t) => {
+                        axis_order.push(AXIS_T);
+                        coord_shape.push(t.count as usize);
+                    }
+                    crate::types::ExpLoop::NETimeLoop(n) => {
+                        axis_order.push(AXIS_T);
+                        coord_shape.push(n.count as usize);
+                    }
+                    crate::types::ExpLoop::XYPosLoop(xy) => {
+                        axis_order.push(AXIS_P);
+                        coord_shape.push(xy.count as usize);
+                    }
+                    crate::types::ExpLoop::ZStackLoop(z) => {
+                        axis_order.push(AXIS_Z);
+                        coord_shape.push(z.count as usize);
+                    }
+                    crate::types::ExpLoop::CustomLoop(_) => {}
+                }
+            }
+            axis_order.push(AXIS_C);
+            coord_shape.push(n_chan);
+            // Add missing axes with size 1 (matching sizes())
+            if !axis_order.contains(&AXIS_P) {
+                axis_order.push(AXIS_P);
+                coord_shape.push(1);
+            }
+            if !axis_order.contains(&AXIS_T) {
+                axis_order.push(AXIS_T);
+                coord_shape.push(1);
+            }
+            if !axis_order.contains(&AXIS_Z) {
+                axis_order.push(AXIS_Z);
+                coord_shape.push(1);
+            }
+        }
+
+        Ok((axis_order, coord_shape))
+    }
+
+    /// Compute sequence index from (p,t,c,z) using experiment loop order (matching nd2-py).
+    fn seq_index_from_coords(
+        &mut self,
+        p: usize,
+        t: usize,
+        c: usize,
+        z: usize,
+    ) -> Result<usize> {
+        let (axis_order, coord_shape) = self.coord_axis_order()?;
+        let coords: Vec<usize> = axis_order
+            .iter()
+            .map(|&ax| match ax {
+                AXIS_P => p,
+                AXIS_T => t,
+                AXIS_C => c,
+                AXIS_Z => z,
+                _ => 0,
+            })
+            .collect();
+
+        if coords.len() != coord_shape.len() {
+            return Err(Nd2Error::InvalidFormat(
+                "Coord/axis length mismatch".to_string(),
+            ));
+        }
+
+        let mut seq = 0usize;
+        let mut stride = 1;
+        for i in (0..coords.len()).rev() {
+            seq += coords[i] * stride;
+            stride *= coord_shape[i];
+        }
+        Ok(seq)
+    }
+
+    /// Read 2D Y×X frame at (p,t,c,z). Returns the Y×X pixels for the requested channel.
     pub fn read_frame_2d(&mut self, p: usize, t: usize, c: usize, z: usize) -> Result<Vec<u16>> {
         let sizes = self.sizes()?;
-        let n_time = *sizes.get(AXIS_T).unwrap_or(&1);
-        let n_chan = *sizes.get(AXIS_C).unwrap_or(&1);
-        let n_z = *sizes.get(AXIS_Z).unwrap_or(&1);
         let height = *sizes.get(AXIS_Y).unwrap_or(&1);
         let width = *sizes.get(AXIS_X).unwrap_or(&1);
-
-        let seq_index =
-            p * (n_time * n_chan * n_z) + t * (n_chan * n_z) + c * n_z + z;
+        let seq_index = self.seq_index_from_coords(p, t, c, z)?;
 
         let frame = self.read_frame(seq_index)?;
         let len = height * width;
-        Ok(frame[0..len.min(frame.len())].to_vec())
+        // Frame is (C,Y,X) planar: channel c is at [c*len..(c+1)*len]
+        let start = (c * len).min(frame.len());
+        let end = ((c + 1) * len).min(frame.len());
+        Ok(frame[start..end].to_vec())
     }
 
     fn read_version<R: Read + Seek>(reader: &mut R) -> Result<(u32, u32)> {

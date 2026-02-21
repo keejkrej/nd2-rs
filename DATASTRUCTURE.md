@@ -1,4 +1,4 @@
-# ND2-RS Architecture & File Format Documentation
+# ND2-RS Data Structure & File Format Documentation
 
 This document provides detailed technical information about the ND2 file format and how nd2-rs parses it.
 
@@ -12,6 +12,7 @@ This document provides detailed technical information about the ND2 file format 
 6. [Module Architecture](#module-architecture)
 7. [Error Handling](#error-handling)
 8. [Performance Considerations](#performance-considerations)
+9. [Experiment Parsing: Findings & Compatibility](#experiment-parsing-findings--compatibility)
 
 ---
 
@@ -684,6 +685,70 @@ let mut file = File::open("image.nd2")?;
 let magic = file.read_u32::<LittleEndian>()?;
 assert_eq!(magic, 0x0ABECEDA);
 ```
+
+---
+
+## Experiment Parsing: Findings & Compatibility
+
+This section documents compatibility fixes made to align nd2-rs experiment parsing with nd2-py. Reference: [nd2-py](https://github.com/tlambert03/nd2) `load_experiment`, `_parse_xy_pos_loop`, `json_from_clx_lite_variant`.
+
+### CLX Lite: ByteArray nested-parsing guard
+
+**Problem:** `looks_like_clx_lite` was too permissive when `name_length <= 1`. Byte arrays like `pItemValid` (144 bytes of 1/0 flags) could be misdetected as nested CLX Lite: byte 0 resembled a type code, byte 1 resembled `name_length`, bytes 2–3 resembled a null terminator. The parser would then try to recursively parse binary data, yielding garbage (e.g. a single `false`) instead of the full validity mask.
+
+**Fix:** Require `name_length > 1` for standalone CLX Lite detection (`clx_lite.rs`). This matches nd2-py’s guard. Small binary fields like `pItemValid` stay as `ByteArray` and are interpreted correctly.
+
+### Experiment structure unwrapping
+
+**Problem:** v3 `ImageMetadataLV!` and `ppNextLevelEx` use nested wrappers: single-key objects (`{"i0000000000": ...}`, `{"SLxExperiment": ...}`), single-element arrays, or objects keyed by `""`. Without unwrapping, `parse_single_loop` receives the wrapper instead of the loop object, and no loop is parsed.
+
+**Fix:** Introduce `unwrap_single_item()` that recurses through:
+- Single-element arrays: `[x]` → `x`
+- Single-key objects with `i0000000000`, `SLxExperiment`, or `""` → inner value
+
+Apply this when passing `SLxExperiment`, when iterating `ppNextLevelEx` children, and when reading position entries from `Points`.
+
+### ppNextLevelEx: direct loop vs indexed children
+
+**Problem:** In some v3 files, `ppNextLevelEx` is the *loop object itself* (with `eType`, `uLoopPars`, etc.) instead of an indexed container. Iterating `.values()` yields non-object primitives; the actual loop is the parent.
+
+**Fix:** If `ppNextLevelEx` is an object with `eType` or `uiLoopType`, treat it as a single loop child. Otherwise, iterate over sorted keys (for `i0000000000`, `i0000000001`, …) as before.
+
+### XYPosLoop: uLoopPars and count source
+
+**Problem:** Count and points were taken from the wrong place. nd2-py uses `uLoopPars` (with optional `i0000000000` unwrap) and prefers `uiCount` from loop params; positions come from `uLoopPars.Points`.
+
+**Fix:**
+- Resolve `params` from `uLoopPars`, unwrapping `i0000000000` when it is the only key.
+- Use `params["uiCount"]` (or `obj["uiCount"]`) for loop count.
+- Read positions from `params["Points"]` or `params["pPeriod"]`, with keys sorted when `Points` is an object.
+
+### XYPosLoop: pItemValid filtering
+
+**Problem:** `Points` can list many positions (e.g. 144) while only some are valid. nd2-py filters with `pItemValid`: `[p for p, is_valid in zip(out_points, valid) if is_valid]`.
+
+**Fix:**
+- Parse `pItemValid` from:
+  - `Object`: sort keys, collect bool/u64 values.
+  - `Array`: collect bool/u64 values.
+  - `ByteArray`: treat each byte as `!= 0`.
+- When iterating `Points`, skip index `i` if `valid[i]` is false.
+
+### TimeLoop: parameter keys
+
+**Problem:** nd2-py expects `dStart`, `dPeriod`, `dDuration` in `uLoopPars`; nd2-rs used different names and multipliers.
+
+**Fix:** Use `params` (from `uLoopPars` with unwrap), and read `dStart`, `dPeriod`, `dDuration` directly. Drop incorrect `* 1000.0` where values are already in milliseconds.
+
+### Sequence index and axis order
+
+**Problem:** nd2-rs assumed a fixed order (P,T,C,Z). Actual ND2 layout follows the experiment’s loop order; channel may be in-pixel (not in the sequence).
+
+**Fix:**
+- Build `coord_axis_order` from the experiment: axis order = experiment loops (outer to inner) then C.
+- When experiment is empty, fall back to P,T,C,Z.
+- Compute `seq_index` via a row-major ravel in that axis order.
+- In `read_frame_2d`, extract the requested channel from the planar (C,Y,X) frame: `frame[c*len..(c+1)*len]`.
 
 ---
 

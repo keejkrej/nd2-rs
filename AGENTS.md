@@ -27,13 +27,13 @@ cargo clippy -- -D warnings
 
 ```bash
 cargo run -- info path/to/file.nd2
-cargo run -- info path/to/file.nd2 --json
-cargo run -- chunks path/to/file.nd2
 
 # Or install and run
 cargo install --path .
 nd2-rs info path/to/file.nd2
 ```
+
+Prints version, attributes, text_info, and experiment as JSON.
 
 ### Running Examples
 
@@ -47,7 +47,7 @@ cargo run --example read_metadata path/to/file.nd2
 nd2-rs/
 ├── src/
 │   ├── lib.rs              # Public API
-│   ├── main.rs             # CLI (info, chunks subcommands)
+│   ├── main.rs             # CLI (info subcommand, outputs JSON)
 │   ├── reader.rs           # Nd2File: sizes, loop_indices, read_frame, read_frame_2d
 │   ├── error.rs
 │   ├── constants.rs
@@ -61,7 +61,7 @@ nd2-rs/
 ├── examples/read_metadata.rs
 ├── Cargo.toml
 ├── README.md
-├── ARCHITECTURE.md
+├── DATASTRUCTURE.md
 └── AGENTS.md
 ```
 
@@ -332,7 +332,7 @@ Follow conventional commits:
 ```
 feat: add ROI metadata parsing
 fix: correct chunk offset calculation
-docs: update architecture documentation
+docs: update DATASTRUCTURE.md
 test: add CLX parser unit tests
 refactor: simplify experiment loop parsing
 perf: use memory-mapped I/O for large files
