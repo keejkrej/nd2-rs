@@ -229,6 +229,30 @@ fn test_read_frame_last() -> Result<()> {
 }
 
 #[test]
+fn test_read_frame_2d() -> Result<()> {
+    let (_, mut nd2) = match require_fixture() {
+        Some(x) => x,
+        None => return Ok(()),
+    };
+
+    let sizes = nd2.sizes()?;
+    let h = *sizes.get("Y").unwrap();
+    let w = *sizes.get("X").unwrap();
+
+    let frame_2d = nd2.read_frame_2d(0, 0, 0, 0)?;
+    assert_eq!(frame_2d.len(), h * w, "read_frame_2d must return Y×X pixels");
+
+    let frame_full = nd2.read_frame(0)?;
+    assert_eq!(
+        &frame_2d[..],
+        &frame_full[0..(h * w)],
+        "read_frame_2d(0,0,0,0) must match first channel of read_frame(0)"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_read_frame_out_of_range() -> Result<()> {
     let (_, mut nd2) = match require_fixture() {
         Some(x) => x,

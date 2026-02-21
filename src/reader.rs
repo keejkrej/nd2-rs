@@ -314,6 +314,23 @@ impl Nd2File {
         Ok(out)
     }
 
+    /// Read 2D Y×X frame at (p,t,c,z). Returns the Y×X pixels (first channel if multi-component).
+    pub fn read_frame_2d(&mut self, p: usize, t: usize, c: usize, z: usize) -> Result<Vec<u16>> {
+        let sizes = self.sizes()?;
+        let n_time = *sizes.get(AXIS_T).unwrap_or(&1);
+        let n_chan = *sizes.get(AXIS_C).unwrap_or(&1);
+        let n_z = *sizes.get(AXIS_Z).unwrap_or(&1);
+        let height = *sizes.get(AXIS_Y).unwrap_or(&1);
+        let width = *sizes.get(AXIS_X).unwrap_or(&1);
+
+        let seq_index =
+            p * (n_time * n_chan * n_z) + t * (n_chan * n_z) + c * n_z + z;
+
+        let frame = self.read_frame(seq_index)?;
+        let len = height * width;
+        Ok(frame[0..len.min(frame.len())].to_vec())
+    }
+
     fn read_version<R: Read + Seek>(reader: &mut R) -> Result<(u32, u32)> {
         reader.seek(SeekFrom::Start(0))?;
 

@@ -13,6 +13,7 @@ Pure Rust library for reading Nikon ND2 microscopy files.
 - `sizes()` – dimension sizes (P, T, C, Z, Y, X)
 - `loop_indices()` – P/T/C/Z mapping for each frame
 - `read_frame(index)` – read raw pixels (u16, C×Y×X) by sequence index
+- `read_frame_2d(p, t, c, z)` – read 2D Y×X frame at (P,T,C,Z)
 - CLX Lite binary format parser
 - Uncompressed and zlib-compressed image data
 - Serde serialization support
@@ -40,29 +41,15 @@ use nd2_rs::{Nd2File, Result};
 
 fn main() -> Result<()> {
     let mut nd2 = Nd2File::open("image.nd2")?;
-
-    // Get file version
-    println!("Version: {:?}", nd2.version());
-
-    // Get dimension sizes (P, T, C, Z, Y, X)
     let sizes = nd2.sizes()?;
-    println!("Sizes: {:?}", sizes);
 
-    // Loop indices: seq_index -> (P, T, C, Z)
-    let loop_indices = nd2.loop_indices()?;
-    println!("Frame 0 coords: {:?}", loop_indices[0]);
+    let n_pos = *sizes.get("P").unwrap_or(&1);
+    let n_time = *sizes.get("T").unwrap_or(&1);
+    let n_chan = *sizes.get("C").unwrap_or(&1);
+    let n_z = *sizes.get("Z").unwrap_or(&1);
 
-    // Read a single frame by sequence index (returns C×Y×X u16 pixels)
-    let pixels = nd2.read_frame(0)?;
-
-    // Get image attributes
-    let attrs = nd2.attributes()?;
-    println!("Dimensions: {}x{}", attrs.width_px.unwrap_or(0), attrs.height_px);
-    println!("Channels: {}", attrs.component_count);
-
-    // Get text info and experiment loops
-    let text_info = nd2.text_info()?;
-    let experiment = nd2.experiment()?;
+    // Read 2D Y×X frame at (p, t, c, z)
+    let pixels = nd2.read_frame_2d(0, 0, 0, 0)?;
 
     Ok(())
 }
