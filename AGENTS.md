@@ -1,13 +1,14 @@
-# Claude Code Development Notes
+# Agent Development Notes
 
-This document contains information for Claude Code agents working on the nd2-rs project.
+This document contains information for AI coding agents (Claude, Cursor, etc.) working on the nd2-rs project.
 
 ## Project Context
 
-**Project:** nd2-rs - Rust implementation of ND2 file reader
-**Language:** Rust (Edition 2021, MSRV 1.70)
-**Purpose:** Parse metadata from Nikon ND2 microscopy files
-**Status:** ✅ Core metadata reading implemented, image data decoding not yet implemented
+**Project:** nd2-rs - Pure Rust ND2 file reader  
+**Language:** Rust (Edition 2021, MSRV 1.70)  
+**Purpose:** Read metadata and pixel data from Nikon ND2 microscopy files  
+**Repository:** https://github.com/keejkrej/nd2-rs  
+**Status:** ✅ Metadata + image data (sizes, read_frame, read_frame_2d). Inspired by [nd2-py](https://github.com/tlambert03/nd2).
 
 ---
 
@@ -17,26 +18,21 @@ This document contains information for Claude Code agents working on the nd2-rs 
 
 ```bash
 cd nd2-rs
-cargo build        # Build library and CLI
-cargo test         # Run tests (when added)
-cargo build --example read_metadata  # Build example
+cargo build
+cargo test         # Unit + integration (integration skips unless ND2_TEST_FILE is set)
+cargo clippy -- -D warnings
 ```
 
 ### Running the CLI
 
 ```bash
-# Run directly with cargo
-cargo run -- --input path/to/file.nd2 --info
+cargo run -- info path/to/file.nd2
+cargo run -- info path/to/file.nd2 --json
+cargo run -- chunks path/to/file.nd2
 
 # Or install and run
 cargo install --path .
-nd2-rs --input path/to/file.nd2 --info
-
-# JSON output
-nd2-rs --input path/to/file.nd2 --info --json
-
-# List chunks
-nd2-rs --input path/to/file.nd2 --chunks
+nd2-rs info path/to/file.nd2
 ```
 
 ### Running Examples
@@ -50,36 +46,30 @@ cargo run --example read_metadata path/to/file.nd2
 ```
 nd2-rs/
 ├── src/
-│   ├── lib.rs              # Public API entry point
-│   ├── main.rs             # CLI binary entry point
-│   ├── reader.rs           # Main Nd2File struct
-│   ├── error.rs            # Error types
-│   ├── constants.rs        # Magic numbers and signatures
-│   ├── chunk/              # Binary chunk parsing
-│   │   ├── mod.rs
-│   │   ├── header.rs       # 16-byte chunk headers
-│   │   └── map.rs          # ChunkMap reading
-│   ├── parse/              # Format parsers
-│   │   ├── mod.rs
-│   │   └── clx_lite.rs     # CLX Lite binary TLV parser
-│   ├── types/              # Type definitions
-│   │   ├── mod.rs
-│   │   ├── attributes.rs   # Image attributes
-│   │   ├── experiment.rs   # Experiment loop types
-│   │   ├── metadata.rs     # Channel/volume metadata
-│   │   └── text_info.rs    # Text metadata
-│   └── metadata/           # CLX → Rust struct conversion
-│       ├── mod.rs
-│       ├── attributes.rs
-│       ├── experiment.rs
-│       └── text_info.rs
-├── examples/
-│   └── read_metadata.rs    # Example program
+│   ├── lib.rs              # Public API
+│   ├── main.rs             # CLI (info, chunks subcommands)
+│   ├── reader.rs           # Nd2File: sizes, loop_indices, read_frame, read_frame_2d
+│   ├── error.rs
+│   ├── constants.rs
+│   ├── chunk/              # ChunkMap, headers
+│   ├── parse/clx_lite.rs   # CLX Lite TLV parser
+│   ├── types/              # Attributes, ExpLoop, TextInfo, Metadata
+│   └── metadata/           # parse_attributes, parse_experiment, parse_text_info (loaded via meta_parse)
+├── tests/
+│   ├── integration.rs     # ND2_TEST_FILE for full tests
+│   └── unit.rs
+├── examples/read_metadata.rs
 ├── Cargo.toml
-├── README.md               # User-facing documentation
-├── ARCHITECTURE.md         # Technical documentation
-└── AGENTS.md              # This file
+├── README.md
+├── ARCHITECTURE.md
+└── AGENTS.md
 ```
+
+### Core API
+
+- `sizes()` → HashMap P,T,C,Z,Y,X
+- `read_frame_2d(p, t, c, z)` → Vec<u16> Y×X (preferred for frame access)
+- `read_frame(seq_index)` → Vec<u16> C×Y×X
 
 ---
 
@@ -183,18 +173,7 @@ mod tests {
 }
 ```
 
-**Integration tests** (future):
-```rust
-// tests/integration.rs
-use nd2_rs::Nd2File;
-
-#[test]
-fn test_read_attributes() {
-    let mut nd2 = Nd2File::open("tests/fixtures/test.nd2").unwrap();
-    let attrs = nd2.attributes().unwrap();
-    assert_eq!(attrs.width_px, Some(512));
-}
-```
+**Integration tests:** See `tests/integration.rs`. Set `ND2_TEST_FILE` to run against a real ND2.
 
 ---
 
@@ -272,21 +251,9 @@ impl Nd2File {
 }
 ```
 
-### Adding Binary Image Data Support
+### Image Data
 
-**Current status:** Not implemented
-**When implementing:**
-
-1. Add `ImageData` type in `src/types/image.rs`
-2. Handle compression types:
-   - Uncompressed (raw bytes)
-   - Lossless (zlib-compressed)
-   - Lossy (custom Nikon format)
-3. Consider using `ndarray` crate for array handling
-4. Add frame reading API:
-   ```rust
-   pub fn read_frame(&mut self, index: usize) -> Result<ImageData>
-   ```
+**Implemented:** `read_frame(index)` returns C×Y×X u16; `read_frame_2d(p,t,c,z)` returns Y×X. Uncompressed and zlib supported.
 
 ### Performance Optimization
 
@@ -438,54 +405,21 @@ pub compression_type: String  // Could be "lossless", "Lossless", "LOSSLESS", et
 
 ## Known Limitations
 
-### Current Implementation
-
-- ✅ Metadata reading (attributes, text info, experiment)
-- ✅ Modern ND2 format (v2.0, v2.1, v3.0)
-- ✅ CLX Lite binary parser
-- ✅ Zlib decompression
-- ❌ Image data decoding
-- ❌ Legacy format (v1.0 JPEG2000)
-- ❌ ROI metadata
-- ❌ Binary masks
-- ❌ Frame-level metadata
-- ❌ Channel metadata (partially implemented in types but not parsed)
-
-### Platform Support
-
-- **Tested:** Windows (MINGW)
-- **Should work:** Linux, macOS (not tested)
-- **Endianness:** Little-endian assumed (x86/x64/ARM)
+- ✅ Metadata (attributes, text_info, experiment), sizes, loop_indices
+- ✅ Image data: read_frame, read_frame_2d (uncompressed + zlib)
+- ❌ Legacy ND2 v1.0 (JPEG2000)
+- ❌ ROI metadata, binary masks
+- **Platform:** Windows, Linux, macOS (CI); little-endian assumed
 
 ---
 
 ## Future Roadmap
 
-### Phase 1: Complete Metadata (Current)
-- ✅ Attributes
-- ✅ Text info
-- ✅ Experiment loops
-- 🔲 Channel metadata
-- 🔲 ROI data
-- 🔲 Binary masks
-
-### Phase 2: Image Data
-- 🔲 Uncompressed frames
-- 🔲 Zlib-compressed frames
-- 🔲 Multi-channel images
-- 🔲 Z-stacks and time series
-
-### Phase 3: Advanced Features
-- 🔲 Memory-mapped I/O
-- 🔲 Parallel chunk loading
-- 🔲 Streaming API
-- 🔲 Write support (create ND2 files)
-
-### Phase 4: Ecosystem
-- 🔲 Python bindings (PyO3)
-- 🔲 CLI tool
-- 🔲 WebAssembly support
-- 🔲 Integration with image processing libraries
+- ✅ Metadata, sizes, loop_indices
+- ✅ Image data (read_frame, read_frame_2d)
+- 🔲 Channel metadata, ROI, binary masks
+- 🔲 Memory-mapped I/O, parallel loading
+- 🔲 Python bindings (PyO3), WebAssembly
 
 ---
 
@@ -506,8 +440,8 @@ cargo check
 # Format code
 cargo fmt
 
-# Lint
-cargo clippy
+# Lint (CI uses -D warnings)
+cargo clippy -- -D warnings
 
 # Documentation
 cargo doc --open
@@ -568,7 +502,7 @@ Could be added later for true lazy initialization, but current caching approach 
 
 ## Contact & Resources
 
-- **Repository:** (Add GitHub URL when available)
-- **Python nd2:** https://github.com/tlambert03/nd2
+- **Repository:** https://github.com/keejkrej/nd2-rs
+- **Python nd2 (reference):** https://github.com/tlambert03/nd2
 - **Rust docs:** https://doc.rust-lang.org/
 - **Serde:** https://serde.rs/
