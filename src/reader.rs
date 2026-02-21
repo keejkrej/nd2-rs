@@ -155,7 +155,7 @@ impl Nd2File {
         let n_chan = attrs.channel_count.unwrap_or(attrs.component_count);
         let height = attrs.height_px as usize;
         let width = attrs.width_px.or(attrs.width_bytes.map(|w| {
-            let bpp = (attrs.bits_per_component_in_memory / 8) as u32;
+            let bpp = attrs.bits_per_component_in_memory / 8;
             w / (bpp * attrs.component_count)
         })).unwrap_or(0) as usize;
 
@@ -268,14 +268,12 @@ impl Nd2File {
             let mut decompressed = Vec::new();
             decoder.read_to_end(&mut decompressed)?;
             decompressed
+        } else if data.len() == expected_raw {
+            data
+        } else if data.len() >= 8 && (data.len() - 8) == expected_raw {
+            data[8..].to_vec()
         } else {
-            if data.len() == expected_raw {
-                data
-            } else if data.len() >= 8 && (data.len() - 8) == expected_raw {
-                data[8..].to_vec()
-            } else {
-                data
-            }
+            data
         };
 
         if pixel_bytes.len() / 2 < frame_size {

@@ -12,7 +12,7 @@ pub fn parse_experiment(clx: ClxValue) -> Result<Vec<ExpLoop>> {
 
 fn parse_experiment_inner(
     clx: ClxValue,
-    level: u32,
+    _level: u32,
     mut dest: Vec<ExpLoop>,
 ) -> Result<Vec<ExpLoop>> {
     let obj = clx
@@ -44,7 +44,7 @@ fn parse_experiment_inner(
                 }
                 other => other.clone(),
             };
-            dest = parse_experiment_inner(inner, level + 1, dest)?;
+            dest = parse_experiment_inner(inner, _level + 1, dest)?;
         }
     }
 
@@ -162,39 +162,37 @@ fn parse_single_loop(obj: &std::collections::HashMap<String, ClxValue>) -> Resul
             // NETimeLoop
             let mut periods = Vec::new();
 
-            if let Some(period_list) = obj.get("pPeriod") {
-                if let ClxValue::Array(arr) = period_list {
-                    for period_item in arr {
-                        if let Some(period_obj) = period_item.as_object() {
-                            let count = period_obj
-                                .get("uiCount")
-                                .and_then(|v| v.as_u64())
-                                .map(|v| v as u32)
-                                .unwrap_or(0);
-                            let start_ms = period_obj
-                                .get("dStart")
-                                .and_then(|v| v.as_f64())
-                                .unwrap_or(0.0)
-                                * 1000.0;
-                            let period_ms = period_obj
-                                .get("dAvgPeriodDiff")
-                                .and_then(|v| v.as_f64())
-                                .unwrap_or(0.0)
-                                * 1000.0;
-                            let duration_ms = period_obj
-                                .get("dDuration")
-                                .and_then(|v| v.as_f64())
-                                .unwrap_or(0.0)
-                                * 1000.0;
+            if let Some(ClxValue::Array(arr)) = obj.get("pPeriod") {
+                for period_item in arr {
+                    if let Some(period_obj) = period_item.as_object() {
+                        let count = period_obj
+                            .get("uiCount")
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as u32)
+                            .unwrap_or(0);
+                        let start_ms = period_obj
+                            .get("dStart")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                            * 1000.0;
+                        let period_ms = period_obj
+                            .get("dAvgPeriodDiff")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                            * 1000.0;
+                        let duration_ms = period_obj
+                            .get("dDuration")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0)
+                            * 1000.0;
 
-                            periods.push(Period {
-                                count,
-                                start_ms,
-                                period_ms,
-                                duration_ms,
-                                period_diff: None,
-                            });
-                        }
+                        periods.push(Period {
+                            count,
+                            start_ms,
+                            period_ms,
+                            duration_ms,
+                            period_diff: None,
+                        });
                     }
                 }
             }

@@ -46,7 +46,7 @@ pub fn read_chunkmap<R: Read + Seek>(reader: &mut R) -> Result<ChunkMap> {
         Nd2Error::InvalidFormat(format!("Failed to read chunkmap name: {}", e))
     })?;
 
-    if &name != ND2_FILEMAP_SIGNATURE {
+    if name != ND2_FILEMAP_SIGNATURE {
         return Err(Nd2Error::InvalidFormat(
             "Invalid chunkmap section name".to_string(),
         ));
