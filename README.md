@@ -41,12 +41,9 @@ use nd2_rs::{Nd2File, Result};
 
 fn main() -> Result<()> {
     let mut nd2 = Nd2File::open("image.nd2")?;
-    let sizes = nd2.sizes()?;
 
-    let n_pos = *sizes.get("P").unwrap_or(&1);
-    let n_time = *sizes.get("T").unwrap_or(&1);
-    let n_chan = *sizes.get("C").unwrap_or(&1);
-    let n_z = *sizes.get("Z").unwrap_or(&1);
+    // Get sizes for iteration (P, T, C, Z, Y, X)
+    let sizes = nd2.sizes()?;
 
     // Read 2D Y×X frame at (p, t, c, z)
     let pixels = nd2.read_frame_2d(0, 0, 0, 0)?;
