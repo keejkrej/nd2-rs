@@ -747,6 +747,7 @@ Apply this when passing `SLxExperiment`, when iterating `ppNextLevelEx` children
 **Fix:**
 - Build `coord_axis_order` from the experiment: axis order = experiment loops (outer to inner) then C.
 - When experiment is empty, fall back to P,T,C,Z.
+- **In-pixel channels:** When `sequence_count` equals the product of experiment loops, do NOT add C to axis order. Each chunk stores one (P,T) frame with all channels. Add C only when `exp_product * n_chan <= sequence_count`.
 - Compute `seq_index` via a row-major ravel in that axis order.
 - In `read_frame_2d`, extract the requested channel from the planar (C,Y,X) frame: `frame[c*len..(c+1)*len]`.
 

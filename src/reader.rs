@@ -310,13 +310,15 @@ impl Nd2File {
         Ok(out)
     }
 
-    /// Build axis order and coord shape from experiment (matching nd2-py).
-    /// Order: experiment loops (outer to inner) then C.
-    /// When experiment is empty, uses P,T,C,Z fallback.
+    /// Build axis order and coord shape for seq_index (chunk lookup).
+    /// sequence_count = number of ImageDataSeq chunks. When channels are "in-pixel"
+    /// (stored within each chunk), sequence_count = product(experiment loops) and we
+    /// must NOT include C in axis_order for chunk indexing.
     fn coord_axis_order(&mut self) -> Result<(Vec<&'static str>, Vec<usize>)> {
         let attrs = self.attributes()?.clone();
         let exp = self.experiment()?.clone();
         let n_chan = attrs.channel_count.unwrap_or(attrs.component_count) as usize;
+        let seq_count = attrs.sequence_count as usize;
 
         let mut axis_order: Vec<&'static str> = Vec::new();
         let mut coord_shape: Vec<usize> = Vec::new();
@@ -325,8 +327,7 @@ impl Nd2File {
             // Fallback: P,T,C,Z (matches sizes() fallback)
             let n_z = 1;
             let n_pos = 1;
-            let total = attrs.sequence_count as usize;
-            let n_time = total / (n_pos * n_chan * n_z).max(1);
+            let n_time = seq_count / (n_pos * n_chan * n_z).max(1);
             axis_order.extend([AXIS_P, AXIS_T, AXIS_C, AXIS_Z]);
             coord_shape.extend([n_pos, n_time, n_chan, n_z]);
         } else {
@@ -351,8 +352,6 @@ impl Nd2File {
                     crate::types::ExpLoop::CustomLoop(_) => {}
                 }
             }
-            axis_order.push(AXIS_C);
-            coord_shape.push(n_chan);
             // Add missing axes with size 1 (matching sizes())
             if !axis_order.contains(&AXIS_P) {
                 axis_order.push(AXIS_P);
@@ -361,6 +360,16 @@ impl Nd2File {
             if !axis_order.contains(&AXIS_T) {
                 axis_order.push(AXIS_T);
                 coord_shape.push(1);
+            }
+            if !axis_order.contains(&AXIS_Z) {
+                axis_order.push(AXIS_Z);
+                coord_shape.push(1);
+            }
+            // Only add C (and ensure Z) when sequence_count indicates chunks span channel
+            let exp_product: usize = coord_shape.iter().product();
+            if exp_product > 0 && exp_product * n_chan <= seq_count {
+                axis_order.push(AXIS_C);
+                coord_shape.push(n_chan);
             }
             if !axis_order.contains(&AXIS_Z) {
                 axis_order.push(AXIS_Z);

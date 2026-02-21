@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.2] - 2025-02-21
+
+### Fixed
+
+- **ChunkNotFound when channels are in-pixel**: For ND2 files where `sequence_count` equals the product of experiment loops (e.g. P×T only, no C in sequence), do not include C in axis order for chunk lookup. Each ImageDataSeq chunk stores one (P,T) frame with all channels; including C produced seq_index 0..1079 but file only has 0..359 chunks.
+
 ## [0.1.1] - 2025-02-21
 
 ### Fixed
