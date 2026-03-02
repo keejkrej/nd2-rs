@@ -58,8 +58,8 @@ fn main() -> Result<()> {
             let mut nd2 = Nd2File::open(&file)?;
             let sizes = nd2.sizes()?;
             let output = serde_json::json!({
-                "timepoints": *sizes.get("T").unwrap_or(&1),
-                "positions_xy": *sizes.get("P").unwrap_or(&1),
+                "frames": *sizes.get("T").unwrap_or(&1),
+                "positions": *sizes.get("P").unwrap_or(&1),
                 "channels": *sizes.get("C").unwrap_or(&1),
                 "height": *sizes.get("Y").unwrap_or(&0),
                 "width": *sizes.get("X").unwrap_or(&0),
