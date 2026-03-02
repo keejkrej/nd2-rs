@@ -40,6 +40,12 @@ pub fn read_chunkmap<R: Read + Seek>(reader: &mut R) -> Result<ChunkMap> {
     header.validate_magic()?;
 
     // Read and validate chunkmap name (supports optional zero padding)
+    if header.name_length < ND2_FILEMAP_SIGNATURE.len() as u32 {
+        return Err(Nd2Error::InvalidFormat(format!(
+            "Invalid chunkmap name length: {}",
+            header.name_length
+        )));
+    }
     let mut name = vec![0u8; header.name_length as usize];
     reader
         .read_exact(&mut name)
@@ -58,7 +64,11 @@ pub fn read_chunkmap<R: Read + Seek>(reader: &mut R) -> Result<ChunkMap> {
 
     // Read chunkmap entries
     // Read all chunkmap data into a buffer to avoid EOF issues with BufReader
-    let mut chunkmap_data = vec![0u8; header.data_length as usize];
+    let chunkmap_len: usize = header
+        .data_length
+        .try_into()
+        .map_err(|_| Nd2Error::InvalidFormat("Chunkmap section too large".to_string()))?;
+    let mut chunkmap_data = vec![0u8; chunkmap_len];
     reader.read_exact(&mut chunkmap_data).map_err(|e| {
         Nd2Error::InvalidFormat(format!(
             "Failed to read {} bytes of chunkmap data: {}",

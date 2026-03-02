@@ -274,6 +274,27 @@ fn test_read_frame_2d() -> Result<()> {
 }
 
 #[test]
+fn test_read_frame_2d_out_of_range() -> Result<()> {
+    let (_, mut nd2) = match require_fixture() {
+        Some(x) => x,
+        None => return Ok(()),
+    };
+
+    let sizes = nd2.sizes()?;
+    let n_pos = *sizes.get("P").unwrap_or(&1);
+    let n_time = *sizes.get("T").unwrap_or(&1);
+    let n_chan = *sizes.get("C").unwrap_or(&1);
+    let n_z = *sizes.get("Z").unwrap_or(&1);
+
+    assert!(nd2.read_frame_2d(0, 0, n_chan, 0).is_err());
+    assert!(nd2.read_frame_2d(n_pos, 0, 0, 0).is_err());
+    assert!(nd2.read_frame_2d(0, n_time, 0, 0).is_err());
+    assert!(nd2.read_frame_2d(0, 0, 0, n_z).is_err());
+
+    Ok(())
+}
+
+#[test]
 fn test_read_frame_out_of_range() -> Result<()> {
     let (_, mut nd2) = match require_fixture() {
         Some(x) => x,

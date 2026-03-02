@@ -74,7 +74,10 @@ fn main() -> Result<()> {
                 height: *sizes.get("Y").unwrap_or(&0),
                 width: *sizes.get("X").unwrap_or(&0),
             };
-            println!("{}", serde_json::to_string_pretty(&output).expect("JSON"));
+            let output = serde_json::to_string_pretty(&output).map_err(|e| {
+                nd2_rs::Nd2Error::InvalidFormat(format!("Failed to serialize info output: {e}"))
+            })?;
+            println!("{}", output);
         }
         Commands::Frame {
             file,
@@ -99,15 +102,30 @@ fn main() -> Result<()> {
                 let n_chan = *sizes.get("C").ok_or_else(|| {
                     nd2_rs::Nd2Error::InvalidFormat("Missing channel count".to_string())
                 })?;
-                let frame_pixels = height * width;
+                let frame_pixels = height.checked_mul(width).ok_or_else(|| {
+                    nd2_rs::Nd2Error::InvalidFormat("Image dimensions overflow".to_string())
+                })?;
                 if c >= n_chan {
                     return Err(nd2_rs::Nd2Error::InvalidFormat(format!(
                         "channel index {} out of range for {} channels",
                         c, n_chan
                     )));
                 }
-                let start = c * frame_pixels;
-                let end = (c + 1) * frame_pixels;
+                let start = c.checked_mul(frame_pixels).ok_or_else(|| {
+                    nd2_rs::Nd2Error::InvalidFormat("Channel offset overflow".to_string())
+                })?;
+                let end = (c + 1).checked_mul(frame_pixels).ok_or_else(|| {
+                    nd2_rs::Nd2Error::InvalidFormat("Channel end index overflow".to_string())
+                })?;
+                if end > frame.len() {
+                    return Err(nd2_rs::Nd2Error::InvalidFormat(format!(
+                        "frame {} has {} pixels, expected at least {} for channel {}",
+                        sequence_index,
+                        frame.len(),
+                        end,
+                        c
+                    )));
+                }
                 (
                     frame[start..end].to_vec(),
                     format!("sequence {sequence_index}, channel {c}"),
