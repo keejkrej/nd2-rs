@@ -56,16 +56,13 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Info { file } => {
             let mut nd2 = Nd2File::open(&file)?;
-            let version = nd2.version();
-            let attributes = nd2.attributes()?.clone();
-            let text_info = nd2.text_info()?.clone();
-            let experiment = nd2.experiment()?.clone();
-
+            let sizes = nd2.sizes()?;
             let output = serde_json::json!({
-                "version": { "major": version.0, "minor": version.1 },
-                "attributes": attributes,
-                "text_info": text_info,
-                "experiment": experiment,
+                "timepoints": *sizes.get("T").unwrap_or(&1),
+                "positions_xy": *sizes.get("P").unwrap_or(&1),
+                "channels": *sizes.get("C").unwrap_or(&1),
+                "height": *sizes.get("Y").unwrap_or(&0),
+                "width": *sizes.get("X").unwrap_or(&0),
             });
             println!("{}", serde_json::to_string_pretty(&output).expect("JSON"));
         }
