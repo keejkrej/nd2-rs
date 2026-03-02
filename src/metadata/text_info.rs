@@ -9,9 +9,7 @@ pub fn parse_text_info(clx: ClxValue) -> Result<TextInfo> {
     };
 
     let get_str = |key: &str| -> Option<String> {
-        obj.get(key)
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
+        obj.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
     };
 
     Ok(TextInfo {

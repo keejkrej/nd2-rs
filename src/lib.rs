@@ -20,11 +20,11 @@
 pub mod error;
 pub mod types;
 
-mod constants;
 mod chunk;
-mod parse;
+mod constants;
 #[path = "metadata/mod.rs"]
 mod meta_parse;
+mod parse;
 mod reader;
 
 pub use error::{Nd2Error, Result};

@@ -159,10 +159,13 @@ impl Nd2File {
 
         let n_chan = attrs.channel_count.unwrap_or(attrs.component_count);
         let height = attrs.height_px as usize;
-        let width = attrs.width_px.or(attrs.width_bytes.map(|w| {
-            let bpp = attrs.bits_per_component_in_memory / 8;
-            w / (bpp * attrs.component_count)
-        })).unwrap_or(0) as usize;
+        let width = attrs
+            .width_px
+            .or(attrs.width_bytes.map(|w| {
+                let bpp = attrs.bits_per_component_in_memory / 8;
+                w / (bpp * attrs.component_count)
+            }))
+            .unwrap_or(0) as usize;
 
         let mut sizes: HashMap<String, usize> = HashMap::new();
 
@@ -248,10 +251,7 @@ impl Nd2File {
         let h = attrs.height_px as usize;
         let w = attrs.width_px.unwrap_or(0) as usize;
         let (n_c, n_comp) = match attrs.channel_count {
-            Some(ch) if ch > 0 => (
-                ch as usize,
-                (attrs.component_count / ch) as usize,
-            ),
+            Some(ch) if ch > 0 => (ch as usize, (attrs.component_count / ch) as usize),
             _ => (attrs.component_count as usize, 1),
         };
         let frame_size = h * w * n_c * n_comp;
@@ -290,7 +290,9 @@ impl Nd2File {
         if pixels.len() < frame_size {
             return Err(Nd2Error::InvalidFormat(format!(
                 "Frame {}: pixel count {} < expected {}",
-                index, pixels.len(), frame_size
+                index,
+                pixels.len(),
+                frame_size
             )));
         }
 
@@ -299,7 +301,8 @@ impl Nd2File {
             for x in 0..w {
                 for c in 0..n_c {
                     for comp in 0..n_comp {
-                        let src_idx = (y * w * n_c * n_comp) + (x * n_c * n_comp) + (c * n_comp) + comp;
+                        let src_idx =
+                            (y * w * n_c * n_comp) + (x * n_c * n_comp) + (c * n_comp) + comp;
                         let dst_idx = (c * n_comp + comp) * (h * w) + y * w + x;
                         out[dst_idx] = pixels[src_idx];
                     }
@@ -381,13 +384,7 @@ impl Nd2File {
     }
 
     /// Compute sequence index from (p,t,c,z) using experiment loop order (matching nd2-py).
-    fn seq_index_from_coords(
-        &mut self,
-        p: usize,
-        t: usize,
-        c: usize,
-        z: usize,
-    ) -> Result<usize> {
+    fn seq_index_from_coords(&mut self, p: usize, t: usize, c: usize, z: usize) -> Result<usize> {
         let (axis_order, coord_shape) = self.coord_axis_order()?;
         let coords: Vec<usize> = axis_order
             .iter()
@@ -462,9 +459,7 @@ impl Nd2File {
 
         // Validate header
         if name_length != 32 || data_length != 64 {
-            return Err(Nd2Error::InvalidFormat(
-                "Corrupt file header".to_string(),
-            ));
+            return Err(Nd2Error::InvalidFormat("Corrupt file header".to_string()));
         }
 
         // Check signature

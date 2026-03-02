@@ -33,7 +33,12 @@ fn test_version() -> Result<()> {
     };
 
     let v = nd2.version();
-    assert!(v.0 >= 2 && v.0 <= 3, "expected modern ND2 version 2.x or 3.x, got {}.{}", v.0, v.1);
+    assert!(
+        v.0 >= 2 && v.0 <= 3,
+        "expected modern ND2 version 2.x or 3.x, got {}.{}",
+        v.0,
+        v.1
+    );
 
     Ok(())
 }
@@ -47,9 +52,15 @@ fn test_attributes() -> Result<()> {
 
     let attrs = nd2.attributes()?;
     assert!(attrs.height_px > 0, "height_px must be positive");
-    assert!(attrs.component_count > 0, "component_count must be positive");
+    assert!(
+        attrs.component_count > 0,
+        "component_count must be positive"
+    );
     assert!(attrs.sequence_count > 0, "sequence_count must be positive");
-    assert!(attrs.bits_per_component_in_memory > 0, "bits_per_component_in_memory must be positive");
+    assert!(
+        attrs.bits_per_component_in_memory > 0,
+        "bits_per_component_in_memory must be positive"
+    );
 
     Ok(())
 }
@@ -89,8 +100,7 @@ fn test_sizes() -> Result<()> {
     let y = *sizes.get("Y").unwrap();
     let x = *sizes.get("X").unwrap();
     assert!(y > 0 && x > 0, "Y and X must be positive");
-    let total: usize = sizes
-        .get("P").copied().unwrap_or(1)
+    let total: usize = sizes.get("P").copied().unwrap_or(1)
         * sizes.get("T").copied().unwrap_or(1)
         * sizes.get("C").copied().unwrap_or(1)
         * sizes.get("Z").copied().unwrap_or(1);
@@ -127,8 +137,7 @@ fn test_loop_indices() -> Result<()> {
         let z = *m.get("Z").unwrap_or(&0);
         let reconstructed = p * n_time * n_chan * n_z + t * n_chan * n_z + c * n_z + z;
         assert_eq!(
-            reconstructed,
-            seq,
+            reconstructed, seq,
             "loop_indices[{}] P={} T={} C={} Z={} should reconstruct to seq {}",
             seq, p, t, c, z, seq
         );
@@ -192,19 +201,27 @@ fn test_read_frame_yx_shape() -> Result<()> {
     let w = *sizes.get("X").unwrap();
     let n_c = *sizes.get("C").unwrap_or(&1);
     let n_z = *sizes.get("Z").unwrap_or(&1);
-    let total_frames = *sizes.get("P").unwrap_or(&1)
-        * sizes.get("T").copied().unwrap_or(1)
-        * n_c
-        * n_z;
+    let total_frames =
+        *sizes.get("P").unwrap_or(&1) * sizes.get("T").copied().unwrap_or(1) * n_c * n_z;
 
     let pixels = nd2.read_frame(0)?;
     let expected = h * w * n_c;
-    assert_eq!(pixels.len(), expected, "frame 0 should be Y*X*C = {} px", expected);
+    assert_eq!(
+        pixels.len(),
+        expected,
+        "frame 0 should be Y*X*C = {} px",
+        expected
+    );
 
     if total_frames > 1 {
         let last = total_frames - 1;
         let pixels_last = nd2.read_frame(last)?;
-        assert_eq!(pixels_last.len(), expected, "frame {} should match shape", last);
+        assert_eq!(
+            pixels_last.len(),
+            expected,
+            "frame {} should match shape",
+            last
+        );
     }
 
     Ok(())
@@ -240,7 +257,11 @@ fn test_read_frame_2d() -> Result<()> {
     let w = *sizes.get("X").unwrap();
 
     let frame_2d = nd2.read_frame_2d(0, 0, 0, 0)?;
-    assert_eq!(frame_2d.len(), h * w, "read_frame_2d must return Y×X pixels");
+    assert_eq!(
+        frame_2d.len(),
+        h * w,
+        "read_frame_2d must return Y×X pixels"
+    );
 
     let frame_full = nd2.read_frame(0)?;
     assert_eq!(

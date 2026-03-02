@@ -1,9 +1,8 @@
 use crate::error::Result;
 use crate::parse::ClxValue;
 use crate::types::{
-    CustomLoop, ExpLoop, NETimeLoop, NETimeLoopParams, Period, Position,
-    StagePosition, TimeLoop, TimeLoopParams, XYPosLoop, XYPosLoopParams, ZStackLoop,
-    ZStackLoopParams,
+    CustomLoop, ExpLoop, NETimeLoop, NETimeLoopParams, Period, Position, StagePosition, TimeLoop,
+    TimeLoopParams, XYPosLoop, XYPosLoopParams, ZStackLoop, ZStackLoopParams,
 };
 
 pub fn parse_experiment(clx: ClxValue) -> Result<Vec<ExpLoop>> {

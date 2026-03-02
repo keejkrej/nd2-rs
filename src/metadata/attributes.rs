@@ -45,13 +45,14 @@ pub fn parse_attributes(clx: ClxValue) -> Result<Attributes> {
         })
         .unwrap_or(PixelDataType::Unsigned);
 
-    let compression_type = obj.get("eCompression").and_then(|v| v.as_str()).map(|s| {
-        match s {
+    let compression_type = obj
+        .get("eCompression")
+        .and_then(|v| v.as_str())
+        .map(|s| match s {
             "lossless" => CompressionType::Lossless,
             "lossy" => CompressionType::Lossy,
             _ => CompressionType::None,
-        }
-    });
+        });
 
     Ok(Attributes {
         bits_per_component_in_memory: get_u32("uiBpcInMemory")?,

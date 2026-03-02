@@ -15,9 +15,9 @@ pub struct ChunkHeader {
 impl ChunkHeader {
     /// Read chunk header from a reader
     pub fn read<R: Read>(reader: &mut R) -> Result<Self> {
-        let magic = reader.read_u32::<LittleEndian>().map_err(|e| {
-            Nd2Error::InvalidFormat(format!("Failed to read chunk magic: {}", e))
-        })?;
+        let magic = reader
+            .read_u32::<LittleEndian>()
+            .map_err(|e| Nd2Error::InvalidFormat(format!("Failed to read chunk magic: {}", e)))?;
         let name_length = reader.read_u32::<LittleEndian>().map_err(|e| {
             Nd2Error::InvalidFormat(format!("Failed to read chunk name length: {}", e))
         })?;
