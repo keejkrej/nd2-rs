@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use nd2_rs::{Nd2File, Result};
+use serde::Serialize;
 use std::fs::File;
 use std::path::Path;
 use std::path::PathBuf;
@@ -50,6 +51,15 @@ enum Commands {
     },
 }
 
+#[derive(Serialize)]
+struct InfoOutput {
+    positions: usize,
+    frames: usize,
+    channels: usize,
+    height: usize,
+    width: usize,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -57,13 +67,13 @@ fn main() -> Result<()> {
         Commands::Info { file } => {
             let mut nd2 = Nd2File::open(&file)?;
             let sizes = nd2.sizes()?;
-            let output = serde_json::json!({
-                "frames": *sizes.get("T").unwrap_or(&1),
-                "positions": *sizes.get("P").unwrap_or(&1),
-                "channels": *sizes.get("C").unwrap_or(&1),
-                "height": *sizes.get("Y").unwrap_or(&0),
-                "width": *sizes.get("X").unwrap_or(&0),
-            });
+            let output = InfoOutput {
+                positions: *sizes.get("P").unwrap_or(&1),
+                frames: *sizes.get("T").unwrap_or(&1),
+                channels: *sizes.get("C").unwrap_or(&1),
+                height: *sizes.get("Y").unwrap_or(&0),
+                width: *sizes.get("X").unwrap_or(&0),
+            };
             println!("{}", serde_json::to_string_pretty(&output).expect("JSON"));
         }
         Commands::Frame {
