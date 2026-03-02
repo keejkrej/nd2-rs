@@ -42,10 +42,7 @@ impl Nd2File {
 
         // Validate version is supported (2.0, 2.1, 3.0)
         if version.0 < 2 || version.0 > 3 {
-            return Err(Nd2Error::UnsupportedVersion {
-                major: version.0,
-                minor: version.1,
-            });
+            return Err(Nd2Error::unsupported_version(version.0, version.1));
         }
 
         // Read chunkmap from end of file
@@ -245,6 +242,7 @@ impl Nd2File {
     /// Read one frame by sequence index. Returns pixels as (C, Y, X) u16 data.
     pub fn read_frame(&mut self, index: usize) -> Result<Vec<u16>> {
         let attrs = self.attributes()?.clone();
+        let max_seq = attrs.sequence_count as usize;
         let chunk_name = format!("ImageDataSeq|{}!", index);
         let chunk_key = chunk_name.as_bytes();
 
@@ -256,7 +254,7 @@ impl Nd2File {
         };
         let bytes_per_pixel = (attrs.bits_per_component_in_memory / 8) as usize;
         if bytes_per_pixel == 0 {
-            return Err(Nd2Error::InvalidFormat(
+            return Err(Nd2Error::file_invalid_format(
                 "Invalid bits_per_component_in_memory".to_string(),
             ));
         }
@@ -265,22 +263,41 @@ impl Nd2File {
             .checked_mul(w)
             .and_then(|v| v.checked_mul(n_c))
             .and_then(|v| v.checked_mul(n_comp))
-            .ok_or_else(|| Nd2Error::InvalidFormat("Frame dimensions overflow".to_string()))?;
+            .ok_or_else(|| {
+                Nd2Error::file_invalid_format("Frame dimensions overflow".to_string())
+            })?;
         let expected_raw = frame_size
             .checked_mul(bytes_per_pixel)
-            .ok_or_else(|| Nd2Error::InvalidFormat("Frame byte size overflow".to_string()))?;
+            .ok_or_else(|| Nd2Error::file_invalid_format("Frame byte size overflow".to_string()))?;
         let frame_area = h
             .checked_mul(w)
-            .ok_or_else(|| Nd2Error::InvalidFormat("Frame area overflow".to_string()))?;
+            .ok_or_else(|| Nd2Error::file_invalid_format("Frame area overflow".to_string()))?;
         let n_c_n_comp = n_c.checked_mul(n_comp).ok_or_else(|| {
-            Nd2Error::InvalidFormat("Frame channel/component overflow".to_string())
+            Nd2Error::file_invalid_format("Frame channel/component overflow".to_string())
         })?;
 
-        let data = self.read_raw_chunk(chunk_key)?;
+        let data = match self.read_raw_chunk(chunk_key) {
+            Ok(data) => data,
+            Err(err) => {
+                if matches!(
+                    err,
+                    Nd2Error::File {
+                        source: crate::error::FileError::ChunkNotFound { .. },
+                    }
+                ) {
+                    return Err(Nd2Error::input_out_of_range(
+                        "sequence index",
+                        index,
+                        max_seq,
+                    ));
+                }
+                return Err(err);
+            }
+        };
 
         let pixel_bytes = if attrs.compression_type == Some(CompressionType::Lossless) {
             if data.len() < 8 {
-                return Err(Nd2Error::InvalidFormat(format!(
+                return Err(Nd2Error::file_invalid_format(format!(
                     "Frame {} compressed chunk too short ({} bytes)",
                     index,
                     data.len()
@@ -299,7 +316,7 @@ impl Nd2File {
         };
 
         if pixel_bytes.len() % 2 != 0 {
-            return Err(Nd2Error::InvalidFormat(format!(
+            return Err(Nd2Error::file_invalid_format(format!(
                 "Frame {}: pixel data length {} is not divisible by 2",
                 index,
                 pixel_bytes.len()
@@ -307,7 +324,7 @@ impl Nd2File {
         }
 
         if pixel_bytes.len() / 2 < frame_size {
-            return Err(Nd2Error::InvalidFormat(format!(
+            return Err(Nd2Error::file_invalid_format(format!(
                 "Frame {}: expected {} pixels ({} bytes), got {} bytes",
                 index,
                 frame_size,
@@ -322,7 +339,7 @@ impl Nd2File {
         }
 
         if pixels.len() < frame_size {
-            return Err(Nd2Error::InvalidFormat(format!(
+            return Err(Nd2Error::file_invalid_format(format!(
                 "Frame {}: pixel count {} < expected {}",
                 index,
                 pixels.len(),
@@ -333,22 +350,22 @@ impl Nd2File {
         let mut out = vec![0u16; frame_size];
         let row_pixels = w
             .checked_mul(n_c_n_comp)
-            .ok_or_else(|| Nd2Error::InvalidFormat("Frame stride overflow".to_string()))?;
+            .ok_or_else(|| Nd2Error::file_invalid_format("Frame stride overflow".to_string()))?;
 
         for y in 0..h {
-            let y_offset = y
-                .checked_mul(row_pixels)
-                .ok_or_else(|| Nd2Error::InvalidFormat("Frame offset overflow".to_string()))?;
+            let y_offset = y.checked_mul(row_pixels).ok_or_else(|| {
+                Nd2Error::file_invalid_format("Frame offset overflow".to_string())
+            })?;
             let y_plane_offset = y.checked_mul(w).ok_or_else(|| {
-                Nd2Error::InvalidFormat("Frame plane offset overflow".to_string())
+                Nd2Error::file_invalid_format("Frame plane offset overflow".to_string())
             })?;
             for x in 0..w {
-                let x_offset = x
-                    .checked_mul(n_c_n_comp)
-                    .ok_or_else(|| Nd2Error::InvalidFormat("Frame offset overflow".to_string()))?;
+                let x_offset = x.checked_mul(n_c_n_comp).ok_or_else(|| {
+                    Nd2Error::file_invalid_format("Frame offset overflow".to_string())
+                })?;
                 for c in 0..n_c {
                     let c_offset = c.checked_mul(n_comp).ok_or_else(|| {
-                        Nd2Error::InvalidFormat("Frame offset overflow".to_string())
+                        Nd2Error::file_invalid_format("Frame offset overflow".to_string())
                     })?;
                     for comp in 0..n_comp {
                         let src_idx = y_offset
@@ -356,19 +373,19 @@ impl Nd2File {
                             .and_then(|v| v.checked_add(c_offset))
                             .and_then(|v| v.checked_add(comp))
                             .ok_or_else(|| {
-                                Nd2Error::InvalidFormat("Frame offset overflow".to_string())
+                                Nd2Error::file_invalid_format("Frame offset overflow".to_string())
                             })?;
                         let dst_x = y_plane_offset.checked_add(x).ok_or_else(|| {
-                            Nd2Error::InvalidFormat("Frame offset overflow".to_string())
+                            Nd2Error::file_invalid_format("Frame offset overflow".to_string())
                         })?;
                         let c_plane = c_offset.checked_add(comp).ok_or_else(|| {
-                            Nd2Error::InvalidFormat("Frame offset overflow".to_string())
+                            Nd2Error::file_invalid_format("Frame offset overflow".to_string())
                         })?;
                         let dst_idx = c_plane
                             .checked_mul(frame_area)
                             .and_then(|v| v.checked_add(dst_x))
                             .ok_or_else(|| {
-                                Nd2Error::InvalidFormat("Frame offset overflow".to_string())
+                                Nd2Error::file_invalid_format("Frame offset overflow".to_string())
                             })?;
                         out[dst_idx] = pixels[src_idx];
                     }
@@ -464,23 +481,24 @@ impl Nd2File {
             .collect();
 
         if coords.len() != coord_shape.len() {
-            return Err(Nd2Error::InvalidFormat(
+            return Err(Nd2Error::file_invalid_format(
                 "Coord/axis length mismatch".to_string(),
             ));
         }
 
         for (idx, (&coord, &shape)) in coords.iter().zip(coord_shape.iter()).enumerate() {
             if shape == 0 {
-                return Err(Nd2Error::InvalidFormat(format!(
+                return Err(Nd2Error::file_invalid_format(format!(
                     "Invalid axis length: {} has size 0",
                     axis_order[idx]
                 )));
             }
             if coord >= shape {
-                return Err(Nd2Error::InvalidFormat(format!(
-                    "Coordinate {} out of range for axis {} (got {}, limit {})",
-                    coord, axis_order[idx], coord, shape
-                )));
+                return Err(Nd2Error::input_out_of_range(
+                    format!("axis {}", axis_order[idx]),
+                    coord,
+                    shape,
+                ));
             }
         }
 
@@ -489,13 +507,13 @@ impl Nd2File {
         for i in (0..coords.len()).rev() {
             let next = coords[i]
                 .checked_mul(stride)
-                .ok_or_else(|| Nd2Error::InvalidFormat("Sequence index overflow".to_string()))?;
+                .ok_or_else(|| Nd2Error::internal_overflow("sequence index multiply"))?;
             seq = seq
                 .checked_add(next)
-                .ok_or_else(|| Nd2Error::InvalidFormat("Sequence index overflow".to_string()))?;
+                .ok_or_else(|| Nd2Error::internal_overflow("sequence index add"))?;
             stride = stride
                 .checked_mul(coord_shape[i])
-                .ok_or_else(|| Nd2Error::InvalidFormat("Sequence stride overflow".to_string()))?;
+                .ok_or_else(|| Nd2Error::internal_overflow("sequence stride multiply"))?;
         }
         Ok(seq)
     }
@@ -503,62 +521,54 @@ impl Nd2File {
     /// Read 2D Y×X frame at (p,t,c,z). Returns the Y×X pixels for the requested channel.
     pub fn read_frame_2d(&mut self, p: usize, t: usize, c: usize, z: usize) -> Result<Vec<u16>> {
         let sizes = self.sizes()?;
-        let height = *sizes
-            .get(AXIS_Y)
-            .ok_or_else(|| Nd2Error::InvalidFormat("Missing height (Y) dimension".to_string()))?;
-        let width = *sizes
-            .get(AXIS_X)
-            .ok_or_else(|| Nd2Error::InvalidFormat("Missing width (X) dimension".to_string()))?;
-        let n_pos = *sizes
-            .get(AXIS_P)
-            .ok_or_else(|| Nd2Error::InvalidFormat("Missing position (P) dimension".to_string()))?;
-        let n_time = *sizes
-            .get(AXIS_T)
-            .ok_or_else(|| Nd2Error::InvalidFormat("Missing time (T) dimension".to_string()))?;
-        let n_chan = *sizes
-            .get(AXIS_C)
-            .ok_or_else(|| Nd2Error::InvalidFormat("Missing channel (C) dimension".to_string()))?;
+        let height = *sizes.get(AXIS_Y).ok_or_else(|| {
+            Nd2Error::file_invalid_format("Missing height (Y) dimension".to_string())
+        })?;
+        let width = *sizes.get(AXIS_X).ok_or_else(|| {
+            Nd2Error::file_invalid_format("Missing width (X) dimension".to_string())
+        })?;
+        let n_pos = *sizes.get(AXIS_P).ok_or_else(|| {
+            Nd2Error::file_invalid_format("Missing position (P) dimension".to_string())
+        })?;
+        let n_time = *sizes.get(AXIS_T).ok_or_else(|| {
+            Nd2Error::file_invalid_format("Missing time (T) dimension".to_string())
+        })?;
+        let n_chan = *sizes.get(AXIS_C).ok_or_else(|| {
+            Nd2Error::file_invalid_format("Missing channel (C) dimension".to_string())
+        })?;
         let n_z = *sizes
             .get(AXIS_Z)
-            .ok_or_else(|| Nd2Error::InvalidFormat("Missing Z dimension".to_string()))?;
+            .ok_or_else(|| Nd2Error::file_invalid_format("Missing Z dimension".to_string()))?;
 
         if p >= n_pos {
-            return Err(Nd2Error::InvalidFormat(format!(
-                "Position index {p} out of range for {n_pos} positions"
-            )));
+            return Err(Nd2Error::input_out_of_range("position index", p, n_pos));
         }
         if t >= n_time {
-            return Err(Nd2Error::InvalidFormat(format!(
-                "Time index {t} out of range for {n_time} frames"
-            )));
+            return Err(Nd2Error::input_out_of_range("time index", t, n_time));
         }
         if c >= n_chan {
-            return Err(Nd2Error::InvalidFormat(format!(
-                "Channel index {c} out of range for {n_chan} channels"
-            )));
+            return Err(Nd2Error::input_out_of_range("channel index", c, n_chan));
         }
         if z >= n_z {
-            return Err(Nd2Error::InvalidFormat(format!(
-                "Z index {z} out of range for {n_z} planes"
-            )));
+            return Err(Nd2Error::input_out_of_range("z index", z, n_z));
         }
 
         let seq_index = self.seq_index_from_coords(p, t, c, z)?;
 
         let frame = self.read_frame(seq_index)?;
-        let len = height
-            .checked_mul(width)
-            .ok_or_else(|| Nd2Error::InvalidFormat("Frame dimensions overflow".to_string()))?;
+        let len = height.checked_mul(width).ok_or_else(|| {
+            Nd2Error::file_invalid_format("Frame dimensions overflow".to_string())
+        })?;
 
         // Frame is (C,Y,X) planar: channel c is at [c*len..(c+1)*len]
-        let start = c
-            .checked_mul(len)
-            .ok_or_else(|| Nd2Error::InvalidFormat("Frame slice start overflow".to_string()))?;
+        let start = c.checked_mul(len).ok_or_else(|| {
+            Nd2Error::file_invalid_format("Frame slice start overflow".to_string())
+        })?;
         let end = (c + 1)
             .checked_mul(len)
-            .ok_or_else(|| Nd2Error::InvalidFormat("Frame slice end overflow".to_string()))?;
+            .ok_or_else(|| Nd2Error::file_invalid_format("Frame slice end overflow".to_string()))?;
         if end > frame.len() {
-            return Err(Nd2Error::InvalidFormat(format!(
+            return Err(Nd2Error::file_invalid_format(format!(
                 "Frame data too short for requested channel: frame {} < {}",
                 frame.len(),
                 end
@@ -572,7 +582,7 @@ impl Nd2File {
 
         let mut header = [0u8; 112]; // 4 + 4 + 8 + 32 + 64
         reader.read_exact(&mut header).map_err(|e| {
-            Nd2Error::InvalidFormat(format!(
+            Nd2Error::file_invalid_format(format!(
                 "Failed to read file header (expected 112 bytes): {}",
                 e
             ))
@@ -585,10 +595,7 @@ impl Nd2File {
         }
 
         if magic != ND2_CHUNK_MAGIC {
-            return Err(Nd2Error::InvalidMagic {
-                expected: ND2_CHUNK_MAGIC,
-                actual: magic,
-            });
+            return Err(Nd2Error::file_invalid_magic(ND2_CHUNK_MAGIC, magic));
         }
 
         let name_length = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
@@ -599,13 +606,15 @@ impl Nd2File {
 
         // Validate header
         if name_length != 32 || data_length != 64 {
-            return Err(Nd2Error::InvalidFormat("Corrupt file header".to_string()));
+            return Err(Nd2Error::file_invalid_format(
+                "Corrupt file header".to_string(),
+            ));
         }
 
         // Check signature
         let name = &header[16..48];
         if name != ND2_FILE_SIGNATURE {
-            return Err(Nd2Error::InvalidFormat(
+            return Err(Nd2Error::file_invalid_format(
                 "Invalid file signature".to_string(),
             ));
         }

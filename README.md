@@ -18,6 +18,7 @@ fn main() -> Result<()> {
     let mut nd2 = Nd2File::open("image.nd2")?;
     let sizes = nd2.sizes()?;
     let pixels = nd2.read_frame_2d(0, 0, 0, 0)?;
+    let frame = nd2.read_frame(12)?; // sequence index
     Ok(())
 }
 ```
@@ -28,7 +29,27 @@ fn main() -> Result<()> {
 nd2-rs info image.nd2
 ```
 
-Prints version, attributes, text_info, and experiment as JSON.
+`info` prints concise dataset shape JSON:
+
+```json
+{
+  "positions": 132,
+  "frames": 181,
+  "channels": 3,
+  "height": 2044,
+  "width": 2048
+}
+```
+
+`frame` supports writing a single channel to 16-bit TIFF by sequence or by `(p, t, c, z)`.
+
+## Error reporting
+
+`Nd2Error` is now grouped by source:
+- `File` for malformed/invalid file contents
+- `Input` for user-provided indices and arguments
+- `Internal` for internal arithmetic/logic issues
+- `Unsupported` for unsupported ND2/CLX variants
 
 ## Docs
 

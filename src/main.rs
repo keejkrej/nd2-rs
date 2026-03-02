@@ -75,7 +75,9 @@ fn main() -> Result<()> {
                 width: *sizes.get("X").unwrap_or(&0),
             };
             let output = serde_json::to_string_pretty(&output).map_err(|e| {
-                nd2_rs::Nd2Error::InvalidFormat(format!("Failed to serialize info output: {e}"))
+                nd2_rs::Nd2Error::file_invalid_format(format!(
+                    "Failed to serialize info output: {e}"
+                ))
             })?;
             println!("{}", output);
         }
@@ -91,34 +93,35 @@ fn main() -> Result<()> {
             let mut nd2 = Nd2File::open(&file)?;
             let sizes = nd2.sizes()?;
             let height = *sizes.get("Y").ok_or_else(|| {
-                nd2_rs::Nd2Error::InvalidFormat("Missing image height".to_string())
+                nd2_rs::Nd2Error::file_invalid_format("Missing image height".to_string())
             })?;
             let width = *sizes.get("X").ok_or_else(|| {
-                nd2_rs::Nd2Error::InvalidFormat("Missing image width".to_string())
+                nd2_rs::Nd2Error::file_invalid_format("Missing image width".to_string())
             })?;
 
             let (pixels, source) = if let Some(sequence_index) = sequence {
                 let frame = nd2.read_frame(sequence_index)?;
                 let n_chan = *sizes.get("C").ok_or_else(|| {
-                    nd2_rs::Nd2Error::InvalidFormat("Missing channel count".to_string())
+                    nd2_rs::Nd2Error::file_invalid_format("Missing channel count".to_string())
                 })?;
                 let frame_pixels = height.checked_mul(width).ok_or_else(|| {
-                    nd2_rs::Nd2Error::InvalidFormat("Image dimensions overflow".to_string())
+                    nd2_rs::Nd2Error::file_invalid_format("Image dimensions overflow".to_string())
                 })?;
                 if c >= n_chan {
-                    return Err(nd2_rs::Nd2Error::InvalidFormat(format!(
-                        "channel index {} out of range for {} channels",
-                        c, n_chan
-                    )));
+                    return Err(nd2_rs::Nd2Error::input_out_of_range(
+                        "channel index",
+                        c,
+                        n_chan,
+                    ));
                 }
                 let start = c.checked_mul(frame_pixels).ok_or_else(|| {
-                    nd2_rs::Nd2Error::InvalidFormat("Channel offset overflow".to_string())
+                    nd2_rs::Nd2Error::input_out_of_range("channel index", c, n_chan)
                 })?;
                 let end = (c + 1).checked_mul(frame_pixels).ok_or_else(|| {
-                    nd2_rs::Nd2Error::InvalidFormat("Channel end index overflow".to_string())
+                    nd2_rs::Nd2Error::input_out_of_range("channel index", c, n_chan)
                 })?;
                 if end > frame.len() {
-                    return Err(nd2_rs::Nd2Error::InvalidFormat(format!(
+                    return Err(nd2_rs::Nd2Error::file_invalid_format(format!(
                         "frame {} has {} pixels, expected at least {} for channel {}",
                         sequence_index,
                         frame.len(),
@@ -154,14 +157,16 @@ fn main() -> Result<()> {
 fn write_u16_tiff(output: &Path, width: u32, height: u32, pixels: &[u16]) -> Result<()> {
     let file = File::create(output)?;
     let mut encoder = TiffEncoder::new(file).map_err(|e| {
-        nd2_rs::Nd2Error::InvalidFormat(format!("Failed to create TIFF encoder: {e}"))
+        nd2_rs::Nd2Error::file_invalid_format(format!("Failed to create TIFF encoder: {e}"))
     })?;
 
     let expected = (width as usize)
         .checked_mul(height as usize)
-        .ok_or_else(|| nd2_rs::Nd2Error::InvalidFormat("Image dimensions overflow".to_string()))?;
+        .ok_or_else(|| {
+            nd2_rs::Nd2Error::file_invalid_format("Image dimensions overflow".to_string())
+        })?;
     if pixels.len() != expected {
-        return Err(nd2_rs::Nd2Error::InvalidFormat(format!(
+        return Err(nd2_rs::Nd2Error::file_invalid_format(format!(
             "Pixel count {} does not match image dimensions {}x{}",
             pixels.len(),
             width,
@@ -171,7 +176,7 @@ fn write_u16_tiff(output: &Path, width: u32, height: u32, pixels: &[u16]) -> Res
 
     encoder
         .write_image::<Gray16>(width, height, pixels)
-        .map_err(|e| nd2_rs::Nd2Error::InvalidFormat(format!("Failed to write TIFF: {e}")))?;
+        .map_err(|e| nd2_rs::Nd2Error::file_invalid_format(format!("Failed to write TIFF: {e}")))?;
 
     Ok(())
 }

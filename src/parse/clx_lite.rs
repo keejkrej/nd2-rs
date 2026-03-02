@@ -114,7 +114,7 @@ impl ClxLiteParser {
                 clx_types::STRING => self.read_utf16_string(cursor)?,
                 clx_types::BYTE_ARRAY => self.read_byte_array(cursor)?,
                 clx_types::LEVEL => self.read_level(cursor)?,
-                other => return Err(Nd2Error::UnsupportedClxType(other)),
+                other => return Err(Nd2Error::unsupported_clx_type(other)),
             };
 
             // Handle empty names (list elements in nd2)
@@ -140,7 +140,7 @@ impl ClxLiteParser {
         let name_length = cursor.read_u8()? as usize;
 
         if data_type == clx_types::DEPRECATED as i8 || data_type == clx_types::UNKNOWN as i8 {
-            return Err(Nd2Error::ClxParse(format!(
+            return Err(Nd2Error::file_invalid_format(format!(
                 "Unknown data type in metadata header: {}",
                 data_type
             )));
@@ -264,7 +264,7 @@ fn decode_utf16_le(bytes: &[u8]) -> Result<String> {
         .chunks_exact(2)
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
-    String::from_utf16(&u16s).map_err(|e| Nd2Error::Utf16Decode(e.to_string()))
+    String::from_utf16(&u16s).map_err(|e| Nd2Error::file_invalid_format(e.to_string()))
 }
 
 /// Strip lowercase prefix from identifier (e.g., "uiWidth" -> "Width")
@@ -280,6 +280,6 @@ fn decompress_zlib(data: &[u8]) -> Result<Vec<u8>> {
     let mut decompressed = Vec::new();
     decoder
         .read_to_end(&mut decompressed)
-        .map_err(|e| Nd2Error::Decompression(e.to_string()))?;
+        .map_err(|e| Nd2Error::file_invalid_format(e.to_string()))?;
     Ok(decompressed)
 }

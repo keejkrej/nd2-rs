@@ -7,6 +7,7 @@
 //!
 //! CI downloads a small OME fixture automatically.
 
+use nd2_rs::error::ErrorSource;
 use nd2_rs::{Nd2File, Result};
 use std::path::PathBuf;
 
@@ -304,6 +305,27 @@ fn test_read_frame_out_of_range() -> Result<()> {
     let loop_indices = nd2.loop_indices()?;
     let bad_idx = loop_indices.len() + 100;
     let res = nd2.read_frame(bad_idx);
-    assert!(res.is_err(), "read_frame out of range must error");
+    let err = res.unwrap_err();
+    assert!(
+        err.source() == ErrorSource::Input,
+        "read_frame out-of-range should be classified as input error"
+    );
+    Ok(())
+}
+
+#[test]
+fn test_read_frame_2d_out_of_range_is_input() -> Result<()> {
+    let (_, mut nd2) = match require_fixture() {
+        Some(x) => x,
+        None => return Ok(()),
+    };
+
+    let sizes = nd2.sizes()?;
+    let n_chan = *sizes.get("C").unwrap_or(&1);
+    let err = nd2.read_frame_2d(0, 0, n_chan, 0).unwrap_err();
+    assert!(
+        err.source() == ErrorSource::Input,
+        "read_frame_2d channel out-of-range should be classified as input error"
+    );
     Ok(())
 }

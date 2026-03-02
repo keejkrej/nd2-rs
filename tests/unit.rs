@@ -15,7 +15,13 @@ fn test_open_invalid_file_fails() {
     let mut f = std::fs::File::create(&tmp).unwrap();
     f.write_all(&[0u8; 200]).unwrap();
     drop(f);
-    let res = Nd2File::open(&tmp);
-    assert!(res.is_err());
+    let err = match Nd2File::open(&tmp) {
+        Ok(_) => unreachable!("garbage file should not open successfully"),
+        Err(err) => err,
+    };
+    assert!(
+        err.is_file(),
+        "invalid file should be classified as file error"
+    );
     let _ = std::fs::remove_file(&tmp);
 }

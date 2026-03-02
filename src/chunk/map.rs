@@ -15,19 +15,20 @@ pub fn read_chunkmap<R: Read + Seek>(reader: &mut R) -> Result<ChunkMap> {
 
     // Read last 40 bytes: 32-byte signature + 8-byte offset
     reader.seek(SeekFrom::End(-40)).map_err(|e| {
-        Nd2Error::InvalidFormat(format!(
-            "Failed to seek to chunkmap signature (file may be too small): {}",
-            e
+        Nd2Error::file_invalid_format(format!(
+            "Failed to seek to chunkmap signature (file may be too small): {e}"
         ))
     })?;
 
     let mut signature = [0u8; 32];
     reader.read_exact(&mut signature).map_err(|e| {
-        Nd2Error::InvalidFormat(format!("Failed to read chunkmap signature: {}", e))
+        Nd2Error::file_invalid_format(format!("Failed to read chunkmap signature: {e}"))
     })?;
 
     if &signature != ND2_CHUNKMAP_SIGNATURE {
-        return Err(Nd2Error::InvalidChunkmapSignature);
+        return Err(Nd2Error::file_invalid_format(
+            "Invalid chunkmap signature (expected ND2_CHUNKMAP_SIGNATURE)",
+        ));
     }
 
     let chunkmap_offset = reader.read_u64::<LittleEndian>()?;
@@ -41,7 +42,7 @@ pub fn read_chunkmap<R: Read + Seek>(reader: &mut R) -> Result<ChunkMap> {
 
     // Read and validate chunkmap name (supports optional zero padding)
     if header.name_length < ND2_FILEMAP_SIGNATURE.len() as u32 {
-        return Err(Nd2Error::InvalidFormat(format!(
+        return Err(Nd2Error::file_invalid_format(format!(
             "Invalid chunkmap name length: {}",
             header.name_length
         )));
@@ -49,7 +50,7 @@ pub fn read_chunkmap<R: Read + Seek>(reader: &mut R) -> Result<ChunkMap> {
     let mut name = vec![0u8; header.name_length as usize];
     reader
         .read_exact(&mut name)
-        .map_err(|e| Nd2Error::InvalidFormat(format!("Failed to read chunkmap name: {}", e)))?;
+        .map_err(|e| Nd2Error::file_invalid_format(format!("Failed to read chunkmap name: {e}")))?;
 
     let is_expected_name = name.starts_with(ND2_FILEMAP_SIGNATURE)
         && name[ND2_FILEMAP_SIGNATURE.len()..]
@@ -57,9 +58,7 @@ pub fn read_chunkmap<R: Read + Seek>(reader: &mut R) -> Result<ChunkMap> {
             .all(|byte| *byte == 0);
 
     if !is_expected_name {
-        return Err(Nd2Error::InvalidFormat(
-            "Invalid chunkmap section name".to_string(),
-        ));
+        return Err(Nd2Error::file_chunkmap("Invalid chunkmap section name"));
     }
 
     // Read chunkmap entries
@@ -67,12 +66,12 @@ pub fn read_chunkmap<R: Read + Seek>(reader: &mut R) -> Result<ChunkMap> {
     let chunkmap_len: usize = header
         .data_length
         .try_into()
-        .map_err(|_| Nd2Error::InvalidFormat("Chunkmap section too large".to_string()))?;
+        .map_err(|_| Nd2Error::file_chunkmap("Chunkmap section too large"))?;
     let mut chunkmap_data = vec![0u8; chunkmap_len];
     reader.read_exact(&mut chunkmap_data).map_err(|e| {
-        Nd2Error::InvalidFormat(format!(
-            "Failed to read {} bytes of chunkmap data: {}",
-            header.data_length, e
+        Nd2Error::file_invalid_format(format!(
+            "Failed to read {} bytes of chunkmap data: {e}",
+            header.data_length
         ))
     })?;
 
@@ -176,8 +175,8 @@ pub fn read_chunkmap<R: Read + Seek>(reader: &mut R) -> Result<ChunkMap> {
         }
 
         if !found_entry {
-            return Err(Nd2Error::InvalidFormat(
-                "Invalid chunkmap entry offset/size values".to_string(),
+            return Err(Nd2Error::file_chunkmap(
+                "Invalid chunkmap entry offset/size values",
             ));
         }
 
@@ -195,9 +194,9 @@ pub fn read_chunk<R: Read + Seek>(
 ) -> Result<Vec<u8>> {
     let file_size = reader.seek(SeekFrom::End(0))?;
 
-    let (offset, map_size) = chunkmap.get(name).ok_or_else(|| Nd2Error::ChunkNotFound {
-        name: String::from_utf8_lossy(name).to_string(),
-    })?;
+    let (offset, map_size) = chunkmap
+        .get(name)
+        .ok_or_else(|| Nd2Error::file_chunk_not_found(String::from_utf8_lossy(name)))?;
 
     // Seek to chunk data (skip header + name)
     reader.seek(SeekFrom::Start(*offset))?;
@@ -214,7 +213,7 @@ pub fn read_chunk<R: Read + Seek>(
         .and_then(|v| v.checked_add(header.name_length as u64))
         .and_then(|v| v.checked_add(size))
         .ok_or_else(|| {
-            Nd2Error::InvalidFormat(format!(
+            Nd2Error::file_invalid_format(format!(
                 "Invalid chunk bounds for '{}': offset {} size {}",
                 String::from_utf8_lossy(name),
                 offset,
@@ -223,7 +222,7 @@ pub fn read_chunk<R: Read + Seek>(
         })?;
 
     if chunk_end > file_size {
-        return Err(Nd2Error::InvalidFormat(format!(
+        return Err(Nd2Error::file_invalid_format(format!(
             "Invalid chunk bounds for '{}': offset {} size {}",
             String::from_utf8_lossy(name),
             offset,
@@ -232,7 +231,7 @@ pub fn read_chunk<R: Read + Seek>(
     }
 
     let size: usize = size.try_into().map_err(|_| {
-        Nd2Error::InvalidFormat(format!(
+        Nd2Error::file_invalid_format(format!(
             "Chunk size {} for '{}' too large for this platform",
             size,
             String::from_utf8_lossy(name)
@@ -242,7 +241,7 @@ pub fn read_chunk<R: Read + Seek>(
     // Read chunk data
     let mut data = vec![0u8; size];
     reader.read_exact(&mut data).map_err(|e| {
-        Nd2Error::InvalidFormat(format!(
+        Nd2Error::file_invalid_format(format!(
             "Failed to read chunk data for '{}': {}",
             String::from_utf8_lossy(name),
             e
