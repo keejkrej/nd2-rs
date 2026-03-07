@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.4] - 2026-03-07
+
+### Fixed
+
+- **Uncompressed frame extraction**: Read `ImageDataSeq` pixel data from the raw frame payload offset used by Nikon/nd2-py instead of requiring a valid chunk header at the filemap offset. This prevents conversion failures on ND2 files with zeroed image chunk headers.
+- **Padded row strides**: Respect `width_bytes` when decoding uncompressed frames so files with padded rows are reshaped correctly.
+
 ## [0.1.2] - 2025-02-21
 
 ### Fixed

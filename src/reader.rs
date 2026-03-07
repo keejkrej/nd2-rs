@@ -20,6 +20,9 @@ const AXIS_Z: &str = "Z";
 const AXIS_Y: &str = "Y";
 const AXIS_X: &str = "X";
 
+/// Raw ImageDataSeq pixel payload starts 4096 bytes after the chunk offset.
+const IMAGE_DATA_PIXEL_OFFSET: u64 = 4096;
+
 /// Main reader for ND2 files
 pub struct Nd2File {
     reader: BufReader<File>,
@@ -258,6 +261,23 @@ impl Nd2File {
                 "Invalid bits_per_component_in_memory".to_string(),
             ));
         }
+        let raw_row_bytes = attrs.width_bytes.map(|w| w as usize).unwrap_or_else(|| {
+            w.saturating_mul(n_c)
+                .saturating_mul(n_comp)
+                .saturating_mul(bytes_per_pixel)
+        });
+        if raw_row_bytes == 0 {
+            return Err(Nd2Error::file_invalid_format(
+                "Invalid frame row stride".to_string(),
+            ));
+        }
+        if raw_row_bytes % bytes_per_pixel != 0 {
+            return Err(Nd2Error::file_invalid_format(format!(
+                "Frame row stride {} is not divisible by bytes per pixel {}",
+                raw_row_bytes, bytes_per_pixel
+            )));
+        }
+        let raw_row_pixels = raw_row_bytes / bytes_per_pixel;
 
         let frame_size = h
             .checked_mul(w)
@@ -266,8 +286,8 @@ impl Nd2File {
             .ok_or_else(|| {
                 Nd2Error::file_invalid_format("Frame dimensions overflow".to_string())
             })?;
-        let expected_raw = frame_size
-            .checked_mul(bytes_per_pixel)
+        let expected_raw = h
+            .checked_mul(raw_row_bytes)
             .ok_or_else(|| Nd2Error::file_invalid_format("Frame byte size overflow".to_string()))?;
         let frame_area = h
             .checked_mul(w)
@@ -275,44 +295,65 @@ impl Nd2File {
         let n_c_n_comp = n_c.checked_mul(n_comp).ok_or_else(|| {
             Nd2Error::file_invalid_format("Frame channel/component overflow".to_string())
         })?;
+        if raw_row_pixels < n_c_n_comp.saturating_mul(w) {
+            return Err(Nd2Error::file_invalid_format(format!(
+                "Frame row stride {} pixels is smaller than required width {}",
+                raw_row_pixels,
+                n_c_n_comp.saturating_mul(w)
+            )));
+        }
 
-        let data = match self.read_raw_chunk(chunk_key) {
-            Ok(data) => data,
-            Err(err) => {
-                if matches!(
-                    err,
-                    Nd2Error::File {
-                        source: crate::error::FileError::ChunkNotFound { .. },
+        let pixel_bytes = match attrs.compression_type {
+            Some(CompressionType::Lossless) => {
+                let data = match self.read_raw_chunk(chunk_key) {
+                    Ok(data) => data,
+                    Err(err) => {
+                        if matches!(
+                            err,
+                            Nd2Error::File {
+                                source: crate::error::FileError::ChunkNotFound { .. },
+                            }
+                        ) {
+                            return Err(Nd2Error::input_out_of_range(
+                                "sequence index",
+                                index,
+                                max_seq,
+                            ));
+                        }
+                        return Err(err);
                     }
-                ) {
-                    return Err(Nd2Error::input_out_of_range(
-                        "sequence index",
-                        index,
-                        max_seq,
-                    ));
-                }
-                return Err(err);
-            }
-        };
+                };
 
-        let pixel_bytes = if attrs.compression_type == Some(CompressionType::Lossless) {
-            if data.len() < 8 {
-                return Err(Nd2Error::file_invalid_format(format!(
-                    "Frame {} compressed chunk too short ({} bytes)",
-                    index,
-                    data.len()
-                )));
+                if data.len() < 8 {
+                    return Err(Nd2Error::file_invalid_format(format!(
+                        "Frame {} compressed chunk too short ({} bytes)",
+                        index,
+                        data.len()
+                    )));
+                }
+                let mut decoder = ZlibDecoder::new(&data[8..]);
+                let mut decompressed = Vec::new();
+                decoder.read_to_end(&mut decompressed)?;
+                decompressed
             }
-            let mut decoder = ZlibDecoder::new(&data[8..]);
-            let mut decompressed = Vec::new();
-            decoder.read_to_end(&mut decompressed)?;
-            decompressed
-        } else if data.len() == expected_raw {
-            data
-        } else if data.len() >= 8 && (data.len() - 8) == expected_raw {
-            data[8..].to_vec()
-        } else {
-            data
+            _ => match self.read_uncompressed_frame_bytes(chunk_key, expected_raw) {
+                Ok(data) => data,
+                Err(err) => {
+                    if matches!(
+                        err,
+                        Nd2Error::File {
+                            source: crate::error::FileError::ChunkNotFound { .. },
+                        }
+                    ) {
+                        return Err(Nd2Error::input_out_of_range(
+                            "sequence index",
+                            index,
+                            max_seq,
+                        ));
+                    }
+                    return Err(err);
+                }
+            },
         };
 
         if pixel_bytes.len() % 2 != 0 {
@@ -348,9 +389,7 @@ impl Nd2File {
         }
 
         let mut out = vec![0u16; frame_size];
-        let row_pixels = w
-            .checked_mul(n_c_n_comp)
-            .ok_or_else(|| Nd2Error::file_invalid_format("Frame stride overflow".to_string()))?;
+        let row_pixels = raw_row_pixels;
 
         for y in 0..h {
             let y_offset = y.checked_mul(row_pixels).ok_or_else(|| {
@@ -394,6 +433,48 @@ impl Nd2File {
         }
 
         Ok(out)
+    }
+
+    fn read_uncompressed_frame_bytes(
+        &mut self,
+        chunk_key: &[u8],
+        expected_raw: usize,
+    ) -> Result<Vec<u8>> {
+        let file_size = self.reader.seek(SeekFrom::End(0))?;
+        let (offset, map_size) = self
+            .chunkmap
+            .get(chunk_key)
+            .ok_or_else(|| Nd2Error::file_chunk_not_found(String::from_utf8_lossy(chunk_key)))?;
+
+        let minimum_chunk_size = (expected_raw as u64)
+            .checked_add(8)
+            .ok_or_else(|| Nd2Error::file_invalid_format("Frame byte size overflow".to_string()))?;
+        if *map_size < minimum_chunk_size {
+            return Err(Nd2Error::file_invalid_format(format!(
+                "Frame chunk '{}' too small: {} bytes < required {} bytes",
+                String::from_utf8_lossy(chunk_key),
+                map_size,
+                minimum_chunk_size
+            )));
+        }
+
+        let pixel_offset = (*offset)
+            .checked_add(IMAGE_DATA_PIXEL_OFFSET)
+            .ok_or_else(|| Nd2Error::file_invalid_format("Frame offset overflow".to_string()))?;
+        let pixel_end = pixel_offset
+            .checked_add(expected_raw as u64)
+            .ok_or_else(|| Nd2Error::file_invalid_format("Frame bounds overflow".to_string()))?;
+        if pixel_end > file_size {
+            return Err(Nd2Error::file_invalid_format(format!(
+                "Frame chunk '{}' exceeds file bounds",
+                String::from_utf8_lossy(chunk_key)
+            )));
+        }
+
+        self.reader.seek(SeekFrom::Start(pixel_offset))?;
+        let mut pixel_bytes = vec![0u8; expected_raw];
+        self.reader.read_exact(&mut pixel_bytes)?;
+        Ok(pixel_bytes)
     }
 
     /// Build axis order and coord shape for seq_index (chunk lookup).
