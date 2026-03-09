@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.6] - 2026-03-09
+
+### Fixed
+
+- **Uncompressed frame fallback**: Prefer the on-disk `ImageDataSeq` chunk header when it is present, but fall back to Nikon's `offset + 4096` payload location when the image chunk header is missing or zeroed. This preserves correct time ordering while still reading files with invalid image chunk headers.
+
 ## [0.1.5] - 2026-03-09
 
 ### Fixed

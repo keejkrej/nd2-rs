@@ -437,24 +437,36 @@ impl Nd2File {
         chunk_key: &[u8],
         expected_raw: usize,
     ) -> Result<Vec<u8>> {
-        // ImageDataSeq chunkmap "size" is not a reliable byte count for raw image payloads
-        // in all ND2 variants. Read through the chunk header instead and strip the 8-byte
-        // frame prefix that precedes the pixel buffer.
-        let data = self.read_raw_chunk(chunk_key)?;
-        let required = expected_raw
-            .checked_add(8)
-            .ok_or_else(|| Nd2Error::file_invalid_format("Frame byte size overflow".to_string()))?;
+        let file_size = self.reader.seek(SeekFrom::End(0))?;
+        let offset = self
+            .chunkmap
+            .get(chunk_key)
+            .map(|(offset, _)| *offset)
+            .ok_or_else(|| Nd2Error::file_chunk_not_found(String::from_utf8_lossy(chunk_key)))?;
 
-        if data.len() < required {
+        let pixel_offset = match self.read_image_chunk_payload_offset(offset)? {
+            Some(payload_offset) => payload_offset.checked_add(8).ok_or_else(|| {
+                Nd2Error::file_invalid_format("Frame payload offset overflow".to_string())
+            })?,
+            None => offset.checked_add(4096).ok_or_else(|| {
+                Nd2Error::file_invalid_format("Frame fallback offset overflow".to_string())
+            })?,
+        };
+
+        let pixel_end = pixel_offset
+            .checked_add(expected_raw as u64)
+            .ok_or_else(|| Nd2Error::file_invalid_format("Frame bounds overflow".to_string()))?;
+        if pixel_end > file_size {
             return Err(Nd2Error::file_invalid_format(format!(
-                "Frame chunk '{}' too small: {} bytes < required {} bytes",
-                String::from_utf8_lossy(chunk_key),
-                data.len(),
-                required
+                "Frame chunk '{}' exceeds file bounds",
+                String::from_utf8_lossy(chunk_key)
             )));
         }
 
-        Ok(data[8..required].to_vec())
+        self.reader.seek(SeekFrom::Start(pixel_offset))?;
+        let mut pixel_bytes = vec![0u8; expected_raw];
+        self.reader.read_exact(&mut pixel_bytes)?;
+        Ok(pixel_bytes)
     }
 
     /// Build axis order and coord shape for seq_index (chunk lookup).
@@ -478,9 +490,7 @@ impl Nd2File {
             axis_order.extend([AXIS_P, AXIS_T, AXIS_C, AXIS_Z]);
             coord_shape.extend([n_pos, n_time, n_chan, n_z]);
         } else {
-            // parse_experiment collects nested loop wrappers before the innermost
-            // acquisition axes that actually vary fastest in ImageDataSeq numbering.
-            for loop_ in exp.iter().rev() {
+            for loop_ in &exp {
                 match loop_ {
                     crate::types::ExpLoop::TimeLoop(t) => {
                         axis_order.push(AXIS_T);
@@ -529,7 +539,7 @@ impl Nd2File {
         Ok((axis_order, coord_shape))
     }
 
-    /// Compute sequence index from (p,t,c,z) using the sequence chunk axis order.
+    /// Compute sequence index from (p,t,c,z) using experiment loop order (matching nd2-py).
     fn seq_index_from_coords(&mut self, p: usize, t: usize, c: usize, z: usize) -> Result<usize> {
         let (axis_order, coord_shape) = self.coord_axis_order()?;
         let coords: Vec<usize> = axis_order
@@ -579,6 +589,28 @@ impl Nd2File {
                 .ok_or_else(|| Nd2Error::internal_overflow("sequence stride multiply"))?;
         }
         Ok(seq)
+    }
+
+    fn read_image_chunk_payload_offset(&mut self, offset: u64) -> Result<Option<u64>> {
+        self.reader.seek(SeekFrom::Start(offset))?;
+
+        let header = match crate::chunk::ChunkHeader::read(&mut self.reader) {
+            Ok(header) => header,
+            Err(_) => return Ok(None),
+        };
+
+        if header.magic != ND2_CHUNK_MAGIC {
+            return Ok(None);
+        }
+
+        let payload_offset = offset
+            .checked_add(16)
+            .and_then(|v| v.checked_add(header.name_length as u64))
+            .ok_or_else(|| {
+                Nd2Error::file_invalid_format("Frame payload offset overflow".to_string())
+            })?;
+
+        Ok(Some(payload_offset))
     }
 
     /// Read 2D Y×X frame at (p,t,c,z). Returns the Y×X pixels for the requested channel.
