@@ -20,9 +20,6 @@ const AXIS_Z: &str = "Z";
 const AXIS_Y: &str = "Y";
 const AXIS_X: &str = "X";
 
-/// Raw ImageDataSeq pixel payload starts 4096 bytes after the chunk offset.
-const IMAGE_DATA_PIXEL_OFFSET: u64 = 4096;
-
 /// Main reader for ND2 files
 pub struct Nd2File {
     reader: BufReader<File>,
@@ -218,8 +215,8 @@ impl Nd2File {
         Ok(sizes)
     }
 
-    /// Loop indices for each frame: seq_index -> axis name -> index.
-    /// Order follows experiment loop order (matching nd2-py).
+    /// Loop indices for each sequence chunk: seq_index -> axis name -> index.
+    /// Channel is omitted when stored in-pixel instead of as separate chunks.
     pub fn loop_indices(&mut self) -> Result<Vec<HashMap<String, usize>>> {
         let (axis_order, coord_shape) = self.coord_axis_order()?;
         let total: usize = coord_shape.iter().product();
@@ -230,7 +227,7 @@ impl Nd2File {
         for seq in 0..total {
             let mut idx = seq;
             let mut m = HashMap::new();
-            // Unravel seq: innermost axis varies fastest
+            // Unravel seq: innermost acquisition axis varies fastest
             for i in (0..n).rev() {
                 let coord = idx % coord_shape[i];
                 idx /= coord_shape[i];
@@ -440,41 +437,24 @@ impl Nd2File {
         chunk_key: &[u8],
         expected_raw: usize,
     ) -> Result<Vec<u8>> {
-        let file_size = self.reader.seek(SeekFrom::End(0))?;
-        let (offset, map_size) = self
-            .chunkmap
-            .get(chunk_key)
-            .ok_or_else(|| Nd2Error::file_chunk_not_found(String::from_utf8_lossy(chunk_key)))?;
-
-        let minimum_chunk_size = (expected_raw as u64)
+        // ImageDataSeq chunkmap "size" is not a reliable byte count for raw image payloads
+        // in all ND2 variants. Read through the chunk header instead and strip the 8-byte
+        // frame prefix that precedes the pixel buffer.
+        let data = self.read_raw_chunk(chunk_key)?;
+        let required = expected_raw
             .checked_add(8)
             .ok_or_else(|| Nd2Error::file_invalid_format("Frame byte size overflow".to_string()))?;
-        if *map_size < minimum_chunk_size {
+
+        if data.len() < required {
             return Err(Nd2Error::file_invalid_format(format!(
                 "Frame chunk '{}' too small: {} bytes < required {} bytes",
                 String::from_utf8_lossy(chunk_key),
-                map_size,
-                minimum_chunk_size
+                data.len(),
+                required
             )));
         }
 
-        let pixel_offset = (*offset)
-            .checked_add(IMAGE_DATA_PIXEL_OFFSET)
-            .ok_or_else(|| Nd2Error::file_invalid_format("Frame offset overflow".to_string()))?;
-        let pixel_end = pixel_offset
-            .checked_add(expected_raw as u64)
-            .ok_or_else(|| Nd2Error::file_invalid_format("Frame bounds overflow".to_string()))?;
-        if pixel_end > file_size {
-            return Err(Nd2Error::file_invalid_format(format!(
-                "Frame chunk '{}' exceeds file bounds",
-                String::from_utf8_lossy(chunk_key)
-            )));
-        }
-
-        self.reader.seek(SeekFrom::Start(pixel_offset))?;
-        let mut pixel_bytes = vec![0u8; expected_raw];
-        self.reader.read_exact(&mut pixel_bytes)?;
-        Ok(pixel_bytes)
+        Ok(data[8..required].to_vec())
     }
 
     /// Build axis order and coord shape for seq_index (chunk lookup).
@@ -498,7 +478,9 @@ impl Nd2File {
             axis_order.extend([AXIS_P, AXIS_T, AXIS_C, AXIS_Z]);
             coord_shape.extend([n_pos, n_time, n_chan, n_z]);
         } else {
-            for loop_ in &exp {
+            // parse_experiment collects nested loop wrappers before the innermost
+            // acquisition axes that actually vary fastest in ImageDataSeq numbering.
+            for loop_ in exp.iter().rev() {
                 match loop_ {
                     crate::types::ExpLoop::TimeLoop(t) => {
                         axis_order.push(AXIS_T);
@@ -547,7 +529,7 @@ impl Nd2File {
         Ok((axis_order, coord_shape))
     }
 
-    /// Compute sequence index from (p,t,c,z) using experiment loop order (matching nd2-py).
+    /// Compute sequence index from (p,t,c,z) using the sequence chunk axis order.
     fn seq_index_from_coords(&mut self, p: usize, t: usize, c: usize, z: usize) -> Result<usize> {
         let (axis_order, coord_shape) = self.coord_axis_order()?;
         let coords: Vec<usize> = axis_order

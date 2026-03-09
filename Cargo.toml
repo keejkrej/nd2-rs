@@ -1,6 +1,6 @@
 [package]
 name = "nd2-rs"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 rust-version = "1.70"
 description = "Pure Rust library for reading Nikon ND2 microscopy files"
@@ -8,6 +8,7 @@ license = "MIT"
 repository = "https://github.com/keejkrej/nd2-rs"
 homepage = "https://github.com/keejkrej/nd2-rs"
 documentation = "https://docs.rs/nd2-rs"
+readme = "README.md"
 keywords = ["microscopy", "nd2", "nikon", "imaging", "bioimaging"]
 categories = ["parser-implementations", "science"]
 

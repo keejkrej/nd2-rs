@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.5] - 2026-03-09
+
+### Fixed
+
+- **Raw `ImageDataSeq` reads**: Use the on-disk chunk header for uncompressed frame payloads instead of trusting the file map size field. This fixes frame extraction for files where the chunk map entry size is not a valid raw byte count.
+- **Sequence index mapping**: Reverse experiment loop order for chunk indexing so `(p, t, c, z)` resolves to the correct `ImageDataSeq` on multi-position time series such as `250129_HuH7.nd2`.
+- **Integration coverage**: Align tests with `sequence_count` rather than assuming sequence chunks always equal `P*T*C*Z` when channels are stored in-pixel.
+
 ## [0.1.4] - 2026-03-07
 
 ### Fixed

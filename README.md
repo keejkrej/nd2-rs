@@ -2,11 +2,15 @@
 
 Pure Rust library for reading Nikon ND2 microscopy files (v2.0, v2.1, v3.0).
 
+- Metadata: `attributes()`, `text_info()`, `experiment()`, `sizes()`, `loop_indices()`
+- Pixel access: `read_frame(sequence_index)` and `read_frame_2d(p, t, c, z)`
+- Encodings: uncompressed and zlib-compressed `ImageDataSeq`
+
 ## Installation
 
 ```toml
 [dependencies]
-nd2-rs = "0.1"
+nd2-rs = "0.1.5"
 ```
 
 ## Usage
@@ -27,6 +31,7 @@ fn main() -> Result<()> {
 
 ```bash
 nd2-rs info image.nd2
+nd2-rs frame image.nd2 frame.tif --p 0 --t 0 --c 0 --z 0
 ```
 
 `info` prints concise dataset shape JSON:
@@ -42,6 +47,12 @@ nd2-rs info image.nd2
 ```
 
 `frame` supports writing a single channel to 16-bit TIFF by sequence or by `(p, t, c, z)`.
+
+Recent fixes improved compatibility with ND2 files that:
+- store channels in-pixel instead of as separate sequence chunks
+- use padded uncompressed row strides via `uiWidthBytes`
+- expose `ImageDataSeq` chunk sizes in the file map that do not match the on-disk chunk header
+- number sequence chunks with position as the outer loop and time as the fast loop
 
 ## Error reporting
 

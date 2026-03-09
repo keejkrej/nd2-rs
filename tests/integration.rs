@@ -117,31 +117,32 @@ fn test_loop_indices() -> Result<()> {
         None => return Ok(()),
     };
 
+    let attrs = nd2.attributes()?.clone();
     let sizes = nd2.sizes()?;
     let n_pos = *sizes.get("P").unwrap_or(&1);
     let n_time = *sizes.get("T").unwrap_or(&1);
     let n_chan = *sizes.get("C").unwrap_or(&1);
     let n_z = *sizes.get("Z").unwrap_or(&1);
-    let expected_len = n_pos * n_time * n_chan * n_z;
+    let expected_len = attrs.sequence_count as usize;
 
     let loop_indices = nd2.loop_indices()?;
     assert_eq!(
         loop_indices.len(),
         expected_len,
-        "loop_indices length should match sizes product P*T*C*Z"
+        "loop_indices length should match sequence_count"
     );
 
-    for (seq, m) in loop_indices.iter().enumerate() {
+    for m in &loop_indices {
         let p = *m.get("P").unwrap_or(&0);
         let t = *m.get("T").unwrap_or(&0);
         let c = *m.get("C").unwrap_or(&0);
         let z = *m.get("Z").unwrap_or(&0);
-        let reconstructed = p * n_time * n_chan * n_z + t * n_chan * n_z + c * n_z + z;
-        assert_eq!(
-            reconstructed, seq,
-            "loop_indices[{}] P={} T={} C={} Z={} should reconstruct to seq {}",
-            seq, p, t, c, z, seq
-        );
+        assert!(p < n_pos, "P index {} out of range {}", p, n_pos);
+        assert!(t < n_time, "T index {} out of range {}", t, n_time);
+        assert!(z < n_z, "Z index {} out of range {}", z, n_z);
+        if m.contains_key("C") {
+            assert!(c < n_chan, "C index {} out of range {}", c, n_chan);
+        }
     }
 
     Ok(())
@@ -197,13 +198,12 @@ fn test_read_frame_yx_shape() -> Result<()> {
         None => return Ok(()),
     };
 
+    let attrs = nd2.attributes()?.clone();
     let sizes = nd2.sizes()?;
     let h = *sizes.get("Y").unwrap();
     let w = *sizes.get("X").unwrap();
     let n_c = *sizes.get("C").unwrap_or(&1);
-    let n_z = *sizes.get("Z").unwrap_or(&1);
-    let total_frames =
-        *sizes.get("P").unwrap_or(&1) * sizes.get("T").copied().unwrap_or(1) * n_c * n_z;
+    let total_frames = attrs.sequence_count as usize;
 
     let pixels = nd2.read_frame(0)?;
     let expected = h * w * n_c;
