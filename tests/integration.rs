@@ -78,6 +78,29 @@ fn test_text_info() -> Result<()> {
 }
 
 #[test]
+fn test_summary() -> Result<()> {
+    let (_, mut nd2) = match require_fixture() {
+        Some(x) => x,
+        None => return Ok(()),
+    };
+
+    let summary = nd2.summary()?;
+    assert!(summary.version_major >= 2, "summary should expose version");
+    assert!(summary.sizes.contains_key("X"), "summary should expose X");
+    assert!(summary.sizes.contains_key("Y"), "summary should expose Y");
+    assert!(
+        summary.logical_frame_count > 0,
+        "summary should expose logical frames"
+    );
+    assert!(
+        summary.channels.len() == *summary.sizes.get("C").unwrap_or(&1),
+        "summary channels should match C dimension"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_experiment() -> Result<()> {
     let (_, mut nd2) = match require_fixture() {
         Some(x) => x,

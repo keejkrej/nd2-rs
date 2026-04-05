@@ -10,7 +10,7 @@ use crate::constants::{JP2_MAGIC, ND2_CHUNK_MAGIC, ND2_FILE_SIGNATURE};
 use crate::error::{Nd2Error, Result};
 use crate::meta_parse::{parse_attributes, parse_experiment, parse_text_info};
 use crate::parse::ClxLiteParser;
-use crate::types::{Attributes, CompressionType, ExpLoop, TextInfo};
+use crate::types::{Attributes, CompressionType, DatasetSummary, ExpLoop, SummaryChannel, TextInfo};
 
 /// Axis names matching nd2-py AXIS
 const AXIS_T: &str = "T";
@@ -133,6 +133,41 @@ impl Nd2File {
             }
         }
         Ok(self.text_info.as_ref().unwrap())
+    }
+
+    /// Return a lightweight dataset overview aligned with other reader crates.
+    pub fn summary(&mut self) -> Result<DatasetSummary> {
+        let sizes = self.sizes()?;
+        let attrs = self.attributes()?.clone();
+        let logical_frame_count = self.loop_indices()?.len();
+
+        let pixel_type = Some(format!(
+            "{}{}",
+            match attrs.pixel_data_type {
+                crate::types::PixelDataType::Float => "Float",
+                crate::types::PixelDataType::Unsigned => "Unsigned",
+            },
+            attrs.bits_per_component_in_memory
+        ));
+        let channel_count = *sizes.get(AXIS_C).unwrap_or(&1);
+        let channels = (0..channel_count)
+            .map(|index| SummaryChannel {
+                index,
+                name: None,
+                color: None,
+                pixel_type: pixel_type.clone(),
+            })
+            .collect();
+
+        Ok(DatasetSummary {
+            version_major: self.version.0,
+            version_minor: self.version.1,
+            sizes: sizes.into_iter().collect(),
+            logical_frame_count,
+            channels,
+            pixel_type,
+            scaling: None,
+        })
     }
 
     /// List all chunk names in the file
