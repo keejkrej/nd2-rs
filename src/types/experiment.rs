@@ -1,21 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[repr(u32)]
-pub enum LoopType {
-    Unknown = 0,
-    TimeLoop = 1,
-    XYPosLoop = 2,
-    XYDiscrLoop = 3,
-    ZStackLoop = 4,
-    PolarLoop = 5,
-    SpectLoop = 6,
-    CustomLoop = 7,
-    NETimeLoop = 8,
-    ManTimeLoop = 9,
-    ZStackLoopAccurate = 10,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ExpLoop {

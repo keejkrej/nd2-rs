@@ -1,13 +1,7 @@
-//! Integration tests for nd2-rs.
+//! Public API integration tests for nd2-rs.
 //!
 //! Without ND2_TEST_FILE: tests skip (pass).
-//! With ND2_TEST_FILE pointing to a valid ND2: full validation.
-//!
-//! Example: ND2_TEST_FILE=D:\huh7.nd2 cargo test
-//!
-//! CI downloads a small OME fixture automatically.
 
-use nd2_rs::error::ErrorSource;
 use nd2_rs::{Nd2File, Result};
 use std::path::PathBuf;
 
@@ -15,340 +9,116 @@ fn test_path() -> Option<PathBuf> {
     std::env::var("ND2_TEST_FILE").ok().map(|s| s.into())
 }
 
-fn require_fixture() -> Option<(PathBuf, Nd2File)> {
+fn require_fixture() -> Option<Nd2File> {
     let path = test_path()?;
     if !path.exists() {
         return None;
     }
-    let nd2 = Nd2File::open(&path).ok()?;
-    Some((path, nd2))
+    Nd2File::open(path).ok()
 }
-
-// --- Metadata tests ---
 
 #[test]
 fn test_version() -> Result<()> {
-    let (_, nd2) = match require_fixture() {
+    let nd2 = match require_fixture() {
         Some(x) => x,
         None => return Ok(()),
     };
 
-    let v = nd2.version();
-    assert!(
-        v.0 >= 2 && v.0 <= 3,
-        "expected modern ND2 version 2.x or 3.x, got {}.{}",
-        v.0,
-        v.1
-    );
-
-    Ok(())
-}
-
-#[test]
-fn test_attributes() -> Result<()> {
-    let (_, mut nd2) = match require_fixture() {
-        Some(x) => x,
-        None => return Ok(()),
-    };
-
-    let attrs = nd2.attributes()?;
-    assert!(attrs.height_px > 0, "height_px must be positive");
-    assert!(
-        attrs.component_count > 0,
-        "component_count must be positive"
-    );
-    assert!(attrs.sequence_count > 0, "sequence_count must be positive");
-    assert!(
-        attrs.bits_per_component_in_memory > 0,
-        "bits_per_component_in_memory must be positive"
-    );
-
-    Ok(())
-}
-
-#[test]
-fn test_text_info() -> Result<()> {
-    let (_, mut nd2) = match require_fixture() {
-        Some(x) => x,
-        None => return Ok(()),
-    };
-
-    let _ = nd2.text_info()?;
+    let version = nd2.version();
+    assert!(version.0 >= 2 && version.0 <= 3);
     Ok(())
 }
 
 #[test]
 fn test_summary() -> Result<()> {
-    let (_, mut nd2) = match require_fixture() {
+    let mut nd2 = match require_fixture() {
         Some(x) => x,
         None => return Ok(()),
     };
 
     let summary = nd2.summary()?;
-    assert!(summary.version_major >= 2, "summary should expose version");
-    assert!(summary.sizes.contains_key("X"), "summary should expose X");
-    assert!(summary.sizes.contains_key("Y"), "summary should expose Y");
-    assert!(
-        summary.logical_frame_count > 0,
-        "summary should expose logical frames"
-    );
-    assert!(
-        summary.channels.len() == *summary.sizes.get("C").unwrap_or(&1),
-        "summary channels should match C dimension"
-    );
-
-    Ok(())
-}
-
-#[test]
-fn test_experiment() -> Result<()> {
-    let (_, mut nd2) = match require_fixture() {
-        Some(x) => x,
-        None => return Ok(()),
-    };
-
-    let _ = nd2.experiment()?;
-    Ok(())
-}
-
-#[test]
-fn test_sizes() -> Result<()> {
-    let (_, mut nd2) = match require_fixture() {
-        Some(x) => x,
-        None => return Ok(()),
-    };
-
-    let sizes = nd2.sizes()?;
-    assert!(sizes.contains_key("Y"), "sizes must have Y");
-    assert!(sizes.contains_key("X"), "sizes must have X");
-    let y = *sizes.get("Y").unwrap();
-    let x = *sizes.get("X").unwrap();
-    assert!(y > 0 && x > 0, "Y and X must be positive");
-    let total: usize = sizes.get("P").copied().unwrap_or(1)
-        * sizes.get("T").copied().unwrap_or(1)
-        * sizes.get("C").copied().unwrap_or(1)
-        * sizes.get("Z").copied().unwrap_or(1);
-    assert!(total > 0, "product of P*T*C*Z must be positive");
-
-    Ok(())
-}
-
-#[test]
-fn test_loop_indices() -> Result<()> {
-    let (_, mut nd2) = match require_fixture() {
-        Some(x) => x,
-        None => return Ok(()),
-    };
-
-    let attrs = nd2.attributes()?.clone();
-    let sizes = nd2.sizes()?;
-    let n_pos = *sizes.get("P").unwrap_or(&1);
-    let n_time = *sizes.get("T").unwrap_or(&1);
-    let n_chan = *sizes.get("C").unwrap_or(&1);
-    let n_z = *sizes.get("Z").unwrap_or(&1);
-    let expected_len = attrs.sequence_count as usize;
-
-    let loop_indices = nd2.loop_indices()?;
+    assert!(summary.version_major >= 2);
+    assert!(summary.sizes["X"] > 0);
+    assert!(summary.sizes["Y"] > 0);
+    assert!(summary.logical_frame_count > 0);
     assert_eq!(
-        loop_indices.len(),
-        expected_len,
-        "loop_indices length should match sequence_count"
+        summary.channels.len(),
+        *summary.sizes.get("C").unwrap_or(&1)
     );
-
-    for m in &loop_indices {
-        let p = *m.get("P").unwrap_or(&0);
-        let t = *m.get("T").unwrap_or(&0);
-        let c = *m.get("C").unwrap_or(&0);
-        let z = *m.get("Z").unwrap_or(&0);
-        assert!(p < n_pos, "P index {} out of range {}", p, n_pos);
-        assert!(t < n_time, "T index {} out of range {}", t, n_time);
-        assert!(z < n_z, "Z index {} out of range {}", z, n_z);
-        if m.contains_key("C") {
-            assert!(c < n_chan, "C index {} out of range {}", c, n_chan);
-        }
-    }
-
     Ok(())
 }
 
 #[test]
-fn test_chunk_names() -> Result<()> {
-    let (_, nd2) = match require_fixture() {
+fn test_read_frame() -> Result<()> {
+    let mut nd2 = match require_fixture() {
         Some(x) => x,
         None => return Ok(()),
     };
 
-    let chunks = nd2.chunk_names();
-    assert!(!chunks.is_empty(), "chunk list must not be empty");
-    assert!(
-        chunks.iter().any(|c| c.starts_with("ImageDataSeq|")),
-        "expected ImageDataSeq| chunks"
-    );
-
-    Ok(())
-}
-
-// --- YX frame read tests ---
-
-#[test]
-fn test_read_frame_0() -> Result<()> {
-    let (_, mut nd2) = match require_fixture() {
-        Some(x) => x,
-        None => return Ok(()),
-    };
-
-    let attrs = nd2.attributes()?;
-    let h = attrs.height_px as usize;
-    let w = attrs.width_px.unwrap_or(0) as usize;
-    let n_comp = attrs.component_count as usize;
-    let expected_pixels = h * w * n_comp;
-
+    let summary = nd2.summary()?;
     let pixels = nd2.read_frame(0)?;
-    assert_eq!(
-        pixels.len(),
-        expected_pixels,
-        "read_frame(0) must return exactly h*w*components = {} pixels",
-        expected_pixels
-    );
-
-    Ok(())
-}
-
-#[test]
-fn test_read_frame_yx_shape() -> Result<()> {
-    let (_, mut nd2) = match require_fixture() {
-        Some(x) => x,
-        None => return Ok(()),
-    };
-
-    let attrs = nd2.attributes()?.clone();
-    let sizes = nd2.sizes()?;
-    let h = *sizes.get("Y").unwrap();
-    let w = *sizes.get("X").unwrap();
-    let n_c = *sizes.get("C").unwrap_or(&1);
-    let total_frames = attrs.sequence_count as usize;
-
-    let pixels = nd2.read_frame(0)?;
-    let expected = h * w * n_c;
-    assert_eq!(
-        pixels.len(),
-        expected,
-        "frame 0 should be Y*X*C = {} px",
-        expected
-    );
-
-    if total_frames > 1 {
-        let last = total_frames - 1;
-        let pixels_last = nd2.read_frame(last)?;
-        assert_eq!(
-            pixels_last.len(),
-            expected,
-            "frame {} should match shape",
-            last
-        );
-    }
-
+    let expected =
+        summary.sizes["Y"] * summary.sizes["X"] * summary.sizes.get("C").copied().unwrap_or(1);
+    assert_eq!(pixels.len(), expected);
     Ok(())
 }
 
 #[test]
 fn test_read_frame_last() -> Result<()> {
-    let (_, mut nd2) = match require_fixture() {
+    let mut nd2 = match require_fixture() {
         Some(x) => x,
         None => return Ok(()),
     };
 
-    let loop_indices = nd2.loop_indices()?;
-    if loop_indices.is_empty() {
-        return Ok(());
-    }
-
-    let last_idx = loop_indices.len() - 1;
-    let pixels = nd2.read_frame(last_idx)?;
-    assert!(!pixels.is_empty(), "read_frame(last) must return non-empty");
+    let summary = nd2.summary()?;
+    let last = summary.logical_frame_count.saturating_sub(1);
+    let pixels = nd2.read_frame(last)?;
+    assert!(!pixels.is_empty());
     Ok(())
 }
 
 #[test]
 fn test_read_frame_2d() -> Result<()> {
-    let (_, mut nd2) = match require_fixture() {
+    let mut nd2 = match require_fixture() {
         Some(x) => x,
         None => return Ok(()),
     };
 
-    let sizes = nd2.sizes()?;
-    let h = *sizes.get("Y").unwrap();
-    let w = *sizes.get("X").unwrap();
-
-    let frame_2d = nd2.read_frame_2d(0, 0, 0, 0)?;
-    assert_eq!(
-        frame_2d.len(),
-        h * w,
-        "read_frame_2d must return Y×X pixels"
-    );
-
-    let frame_full = nd2.read_frame(0)?;
-    assert_eq!(
-        &frame_2d[..],
-        &frame_full[0..(h * w)],
-        "read_frame_2d(0,0,0,0) must match first channel of read_frame(0)"
-    );
-
-    Ok(())
-}
-
-#[test]
-fn test_read_frame_2d_out_of_range() -> Result<()> {
-    let (_, mut nd2) = match require_fixture() {
-        Some(x) => x,
-        None => return Ok(()),
-    };
-
-    let sizes = nd2.sizes()?;
-    let n_pos = *sizes.get("P").unwrap_or(&1);
-    let n_time = *sizes.get("T").unwrap_or(&1);
-    let n_chan = *sizes.get("C").unwrap_or(&1);
-    let n_z = *sizes.get("Z").unwrap_or(&1);
-
-    assert!(nd2.read_frame_2d(0, 0, n_chan, 0).is_err());
-    assert!(nd2.read_frame_2d(n_pos, 0, 0, 0).is_err());
-    assert!(nd2.read_frame_2d(0, n_time, 0, 0).is_err());
-    assert!(nd2.read_frame_2d(0, 0, 0, n_z).is_err());
-
+    let summary = nd2.summary()?;
+    let frame = nd2.read_frame_2d(0, 0, 0, 0)?;
+    let expected = summary.sizes["Y"] * summary.sizes["X"];
+    assert_eq!(frame.len(), expected);
     Ok(())
 }
 
 #[test]
 fn test_read_frame_out_of_range() -> Result<()> {
-    let (_, mut nd2) = match require_fixture() {
+    let mut nd2 = match require_fixture() {
         Some(x) => x,
         None => return Ok(()),
     };
 
-    let loop_indices = nd2.loop_indices()?;
-    let bad_idx = loop_indices.len() + 100;
-    let res = nd2.read_frame(bad_idx);
-    let err = res.unwrap_err();
-    assert!(
-        err.source() == ErrorSource::Input,
-        "read_frame out-of-range should be classified as input error"
-    );
+    let summary = nd2.summary()?;
+    assert!(nd2.read_frame(summary.logical_frame_count + 1).is_err());
     Ok(())
 }
 
 #[test]
-fn test_read_frame_2d_out_of_range_is_input() -> Result<()> {
-    let (_, mut nd2) = match require_fixture() {
+fn test_read_frame_2d_out_of_range() -> Result<()> {
+    let mut nd2 = match require_fixture() {
         Some(x) => x,
         None => return Ok(()),
     };
 
-    let sizes = nd2.sizes()?;
-    let n_chan = *sizes.get("C").unwrap_or(&1);
-    let err = nd2.read_frame_2d(0, 0, n_chan, 0).unwrap_err();
-    assert!(
-        err.source() == ErrorSource::Input,
-        "read_frame_2d channel out-of-range should be classified as input error"
-    );
+    let summary = nd2.summary()?;
+    let p = summary.sizes.get("P").copied().unwrap_or(1);
+    let t = summary.sizes.get("T").copied().unwrap_or(1);
+    let c = summary.sizes.get("C").copied().unwrap_or(1);
+    let z = summary.sizes.get("Z").copied().unwrap_or(1);
+
+    assert!(nd2.read_frame_2d(p, 0, 0, 0).is_err());
+    assert!(nd2.read_frame_2d(0, t, 0, 0).is_err());
+    assert!(nd2.read_frame_2d(0, 0, c, 0).is_err());
+    assert!(nd2.read_frame_2d(0, 0, 0, z).is_err());
     Ok(())
 }

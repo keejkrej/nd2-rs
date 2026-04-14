@@ -8,9 +8,9 @@ use flate2::read::ZlibDecoder;
 use crate::chunk::{read_chunk, read_chunkmap, ChunkMap};
 use crate::constants::{JP2_MAGIC, ND2_CHUNK_MAGIC, ND2_FILE_SIGNATURE};
 use crate::error::{Nd2Error, Result};
-use crate::meta_parse::{parse_attributes, parse_experiment, parse_text_info};
+use crate::meta_parse::{parse_attributes, parse_experiment};
 use crate::parse::ClxLiteParser;
-use crate::types::{Attributes, CompressionType, DatasetSummary, ExpLoop, SummaryChannel, TextInfo};
+use crate::types::{Attributes, CompressionType, DatasetSummary, ExpLoop, SummaryChannel};
 
 /// Axis names matching nd2-py AXIS
 const AXIS_T: &str = "T";
@@ -28,7 +28,6 @@ pub struct Nd2File {
     // Cached metadata
     attributes: Option<Attributes>,
     experiment: Option<Vec<ExpLoop>>,
-    text_info: Option<TextInfo>,
 }
 
 impl Nd2File {
@@ -54,7 +53,6 @@ impl Nd2File {
             chunkmap,
             attributes: None,
             experiment: None,
-            text_info: None,
         })
     }
 
@@ -64,7 +62,7 @@ impl Nd2File {
     }
 
     /// Get image attributes
-    pub fn attributes(&mut self) -> Result<&Attributes> {
+    fn attributes(&mut self) -> Result<&Attributes> {
         if self.attributes.is_none() {
             let chunk_name: &[u8] = if self.version.0 >= 3 {
                 b"ImageAttributesLV!"
@@ -80,7 +78,7 @@ impl Nd2File {
     }
 
     /// Get experiment loop definitions
-    pub fn experiment(&mut self) -> Result<&Vec<ExpLoop>> {
+    fn experiment(&mut self) -> Result<&Vec<ExpLoop>> {
         if self.experiment.is_none() {
             let chunk_name: &[u8] = if self.version.0 >= 3 {
                 b"ImageMetadataLV!"
@@ -112,27 +110,6 @@ impl Nd2File {
             }
         }
         Ok(self.experiment.as_ref().unwrap())
-    }
-
-    /// Get text info (descriptions, author, date, etc.)
-    pub fn text_info(&mut self) -> Result<&TextInfo> {
-        if self.text_info.is_none() {
-            let chunk_name: &[u8] = if self.version.0 >= 3 {
-                b"ImageTextInfoLV!"
-            } else {
-                b"ImageTextInfo!"
-            };
-
-            if !self.chunkmap.contains_key(chunk_name) {
-                self.text_info = Some(TextInfo::default());
-            } else {
-                let data = read_chunk(&mut self.reader, &self.chunkmap, chunk_name)?;
-                let parser = ClxLiteParser::new(false);
-                let clx = parser.parse(&data)?;
-                self.text_info = Some(parse_text_info(clx)?);
-            }
-        }
-        Ok(self.text_info.as_ref().unwrap())
     }
 
     /// Return a lightweight dataset overview aligned with other reader crates.
@@ -170,22 +147,14 @@ impl Nd2File {
         })
     }
 
-    /// List all chunk names in the file
-    pub fn chunk_names(&self) -> Vec<String> {
-        self.chunkmap
-            .keys()
-            .filter_map(|k| String::from_utf8(k.clone()).ok())
-            .collect()
-    }
-
     /// Read raw chunk data by name
-    pub fn read_raw_chunk(&mut self, name: &[u8]) -> Result<Vec<u8>> {
+    fn read_raw_chunk(&mut self, name: &[u8]) -> Result<Vec<u8>> {
         read_chunk(&mut self.reader, &self.chunkmap, name)
     }
 
     /// Dimensions (P,T,C,Z,Y,X) derived from attributes + experiment.
     /// When experiment is empty, infers minimal structure from sequence_count.
-    pub fn sizes(&mut self) -> Result<HashMap<String, usize>> {
+    fn sizes(&mut self) -> Result<HashMap<String, usize>> {
         let attrs = self.attributes()?.clone();
         let exp = self.experiment()?.clone();
 
@@ -252,7 +221,7 @@ impl Nd2File {
 
     /// Loop indices for each sequence chunk: seq_index -> axis name -> index.
     /// Channel is omitted when stored in-pixel instead of as separate chunks.
-    pub fn loop_indices(&mut self) -> Result<Vec<HashMap<String, usize>>> {
+    fn loop_indices(&mut self) -> Result<Vec<HashMap<String, usize>>> {
         let (axis_order, coord_shape) = self.coord_axis_order()?;
         let total: usize = coord_shape.iter().product();
 

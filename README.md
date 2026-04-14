@@ -2,7 +2,7 @@
 
 Pure Rust library for reading Nikon ND2 microscopy files (v2.0, v2.1, v3.0).
 
-- Metadata: `summary()`, `attributes()`, `text_info()`, `experiment()`, `sizes()`, `loop_indices()`
+- Metadata: `version()` and `summary()`
 - Pixel access: `read_frame(sequence_index)` and `read_frame_2d(p, t, c, z)`
 - Encodings: uncompressed and zlib-compressed `ImageDataSeq`
 
@@ -10,7 +10,7 @@ Pure Rust library for reading Nikon ND2 microscopy files (v2.0, v2.1, v3.0).
 
 ```toml
 [dependencies]
-nd2-rs = "0.1.6"
+nd2-rs = "0.2.0"
 ```
 
 ## Usage
@@ -21,9 +21,12 @@ use nd2_rs::{Nd2File, Result};
 fn main() -> Result<()> {
     let mut nd2 = Nd2File::open("image.nd2")?;
     let summary = nd2.summary()?;
-    let sizes = nd2.sizes()?;
     let pixels = nd2.read_frame_2d(0, 0, 0, 0)?;
     let frame = nd2.read_frame(12)?; // sequence index
+    let sizes = &summary.sizes;
+    println!("width: {}", sizes["X"]);
+    println!("plane pixels: {}", pixels.len());
+    println!("frame pixels: {}", frame.len());
     println!("logical frames: {}", summary.logical_frame_count);
     Ok(())
 }

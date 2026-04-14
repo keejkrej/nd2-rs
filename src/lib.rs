@@ -11,14 +11,14 @@
 //!     let mut nd2 = Nd2File::open("image.nd2")?;
 //!
 //!     println!("Version: {:?}", nd2.version());
-//!     println!("Attributes: {:#?}", nd2.attributes()?);
+//!     println!("Summary: {:#?}", nd2.summary()?);
 //!
 //!     Ok(())
 //! }
 //! ```
 
-pub mod error;
-pub mod types;
+mod error;
+mod types;
 
 mod chunk;
 mod constants;
@@ -29,4 +29,4 @@ mod reader;
 
 pub use error::{Nd2Error, Result};
 pub use reader::Nd2File;
-pub use types::*;
+pub use types::{DatasetSummary, SummaryChannel, SummaryScaling};
