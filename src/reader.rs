@@ -49,10 +49,10 @@ impl Nd2File {
     #[cfg(feature = "smb")]
     /// Open an ND2 file via a virtual `smb:{sessionId}/relative/path` URL.
     ///
-    /// Requires `imaging_smb_io::register_provider` before calling.
+    /// Requires `mdat_smb_rs::register_provider` before calling.
     pub fn open_smb(path: &str) -> Result<Self> {
         let reader =
-            imaging_smb_io::open_path(path).map_err(|message| Nd2Error::file_invalid_format(message))?;
+            mdat_smb_rs::open_path(path).map_err(|message| Nd2Error::file_invalid_format(message))?;
         Self::open_reader(reader)
     }
 
