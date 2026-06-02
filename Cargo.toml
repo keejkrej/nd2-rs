@@ -12,10 +12,15 @@ readme = "README.md"
 keywords = ["microscopy", "nd2", "nikon", "imaging", "bioimaging"]
 categories = ["parser-implementations", "science"]
 
+[features]
+default = []
+smb = ["dep:imaging-smb-io"]
+
 [dependencies]
 thiserror = "1.0"
 byteorder = "1.5"
 serde = { version = "1.0", features = ["derive"] }
 flate2 = "1.0"
+imaging-smb-io = { path = "../lisca/crates/imaging-smb-io", optional = true }
 
 [dev-dependencies]

@@ -20,9 +20,11 @@ const AXIS_Z: &str = "Z";
 const AXIS_Y: &str = "Y";
 const AXIS_X: &str = "X";
 
+use crate::io::ReadSeek;
+
 /// Main reader for ND2 files
 pub struct Nd2File {
-    reader: BufReader<File>,
+    reader: BufReader<Box<dyn ReadSeek>>,
     version: (u32, u32),
     chunkmap: ChunkMap,
     // Cached metadata
@@ -31,22 +33,35 @@ pub struct Nd2File {
 }
 
 impl Nd2File {
-    /// Open an ND2 file for reading
+    /// Open an ND2 file from any [`Read`] + [`Seek`] source (e.g. in-memory buffer).
+    pub fn open_reader<R>(reader: R) -> Result<Self>
+    where
+        R: Read + Seek + 'static,
+    {
+        Self::open_buffered(BufReader::new(Box::new(reader)))
+    }
+
+    /// Open an ND2 file for reading from a local path.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file = File::open(path)?;
-        let mut reader = BufReader::new(file);
+        Self::open_reader(File::open(path)?)
+    }
 
-        // Read and validate file header
+    #[cfg(feature = "smb")]
+    /// Open an ND2 file via a virtual `smb:{sessionId}/relative/path` URL.
+    ///
+    /// Requires `imaging_smb_io::register_provider` before calling.
+    pub fn open_smb(path: &str) -> Result<Self> {
+        let reader =
+            imaging_smb_io::open_path(path).map_err(|message| Nd2Error::file_invalid_format(message))?;
+        Self::open_reader(reader)
+    }
+
+    fn open_buffered(mut reader: BufReader<Box<dyn ReadSeek>>) -> Result<Self> {
         let version = Self::read_version(&mut reader)?;
-
-        // Validate version is supported (2.0, 2.1, 3.0)
         if version.0 < 2 || version.0 > 3 {
             return Err(Nd2Error::unsupported_version(version.0, version.1));
         }
-
-        // Read chunkmap from end of file
         let chunkmap = read_chunkmap(&mut reader)?;
-
         Ok(Self {
             reader,
             version,

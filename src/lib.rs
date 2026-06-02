@@ -18,6 +18,7 @@
 //! ```
 
 mod error;
+mod io;
 mod types;
 
 mod chunk;
@@ -28,5 +29,6 @@ mod parse;
 mod reader;
 
 pub use error::{Nd2Error, Result};
+pub use io::ReadSeek;
 pub use reader::Nd2File;
 pub use types::{DatasetSummary, SummaryChannel, SummaryScaling};
