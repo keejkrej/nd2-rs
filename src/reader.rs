@@ -46,16 +46,6 @@ impl Nd2File {
         Self::open_reader(File::open(path)?)
     }
 
-    #[cfg(feature = "smb")]
-    /// Open an ND2 file via a virtual `smb:{sessionId}/relative/path` URL.
-    ///
-    /// Requires `mdat_smb_rs::register_provider` before calling.
-    pub fn open_smb(path: &str) -> Result<Self> {
-        let reader =
-            mdat_smb_rs::open_path(path).map_err(|message| Nd2Error::file_invalid_format(message))?;
-        Self::open_reader(reader)
-    }
-
     fn open_buffered(mut reader: BufReader<Box<dyn ReadSeek>>) -> Result<Self> {
         let version = Self::read_version(&mut reader)?;
         if version.0 < 2 || version.0 > 3 {
