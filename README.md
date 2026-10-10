@@ -1,4 +1,4 @@
-# nd2-rs
+# nd2
 
 Pure Rust library for reading Nikon ND2 microscopy files (v2.0, v2.1, v3.0).
 
@@ -10,13 +10,13 @@ Pure Rust library for reading Nikon ND2 microscopy files (v2.0, v2.1, v3.0).
 
 ```toml
 [dependencies]
-nd2-rs = "0.2.0"
+nd2 = "0.2.0"
 ```
 
 ## Usage
 
 ```rust
-use nd2_rs::{Nd2File, Result};
+use nd2::{Nd2File, Result};
 
 fn main() -> Result<()> {
     let mut nd2 = Nd2File::open("image.nd2")?;

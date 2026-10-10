@@ -669,7 +669,7 @@ std::fs::write("chunk_dump.bin", data)?;
 ### Parse CLX Manually
 
 ```rust
-use nd2_rs::parse::ClxLiteParser;
+use nd2::parse::ClxLiteParser;
 
 let parser = ClxLiteParser::new(false);
 let clx = parser.parse(&data)?;

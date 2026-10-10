@@ -307,7 +307,7 @@ for chunk in data.chunks(16) {
 ### Debug CLX Parsing
 
 ```rust
-use nd2_rs::parse::{ClxLiteParser, ClxValue};
+use nd2::parse::{ClxLiteParser, ClxValue};
 
 let parser = ClxLiteParser::new(false);
 let clx = parser.parse(&data)?;
