@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.0.0] - 2026-10-10
+
+### Changed
+- Published to crates.io as `nd2` (dropping the legacy `-rs` name).
+- Dual-licensed under MIT OR Apache-2.0.
+- Full API alignment with companion microscopy crates (e.g. `czi`).
+- Added `path(&self) -> Option<&Path>` to `Nd2File`.
+- Added public `sizes(&mut self) -> Result<BTreeMap<String, usize>>` method to `Nd2File`.
+- Re-exported full error taxonomy (`ErrorSource`, `FileError`, `InputError`, `InternalError`, `UnsupportedError`).
+- Implemented `Display` and `Hash` for `ErrorSource`.
+- Implemented `std::fmt::Debug` for `Nd2File`.
+- Added `Reader` type alias for `Nd2File`.
+- Standardized README, documentation, and examples.
+
 ## [0.1.6] - 2026-03-09
 
 ### Fixed

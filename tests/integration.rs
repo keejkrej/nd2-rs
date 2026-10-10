@@ -6,7 +6,15 @@ use nd2::{Nd2File, Result};
 use std::path::PathBuf;
 
 fn test_path() -> Option<PathBuf> {
-    std::env::var("ND2_TEST_FILE").ok().map(|s| s.into())
+    if let Ok(s) = std::env::var("ND2_TEST_FILE") {
+        let p = PathBuf::from(s);
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    let local = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/BF007.nd2");
+    local.exists().then_some(local)
 }
 
 fn require_fixture() -> Option<Nd2File> {

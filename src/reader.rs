@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use flate2::read::ZlibDecoder;
 
@@ -22,8 +22,9 @@ const AXIS_X: &str = "X";
 
 use crate::io::ReadSeek;
 
-/// Main reader for ND2 files
+/// Main reader for Nikon ND2 microscopy files.
 pub struct Nd2File {
+    path: Option<PathBuf>,
     reader: BufReader<Box<dyn ReadSeek>>,
     version: (u32, u32),
     chunkmap: ChunkMap,
@@ -38,21 +39,27 @@ impl Nd2File {
     where
         R: Read + Seek + 'static,
     {
-        Self::open_buffered(BufReader::new(Box::new(reader)))
+        Self::open_buffered(None, BufReader::new(Box::new(reader)))
     }
 
-    /// Open an ND2 file for reading from a local path.
+    /// Open an ND2 file for reading from a local filesystem path.
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
-        Self::open_reader(File::open(path)?)
+        let p = path.as_ref().to_path_buf();
+        let file = File::open(&p)?;
+        Self::open_buffered(Some(p), BufReader::new(Box::new(file)))
     }
 
-    fn open_buffered(mut reader: BufReader<Box<dyn ReadSeek>>) -> Result<Self> {
+    fn open_buffered(
+        path: Option<PathBuf>,
+        mut reader: BufReader<Box<dyn ReadSeek>>,
+    ) -> Result<Self> {
         let version = Self::read_version(&mut reader)?;
         if version.0 < 2 || version.0 > 3 {
             return Err(Nd2Error::unsupported_version(version.0, version.1));
         }
         let chunkmap = read_chunkmap(&mut reader)?;
         Ok(Self {
+            path,
             reader,
             version,
             chunkmap,
@@ -61,10 +68,27 @@ impl Nd2File {
         })
     }
 
+    /// Returns the filesystem path to this file, if opened from a path.
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
     /// Get the file format version (major, minor)
     pub fn version(&self) -> (u32, u32) {
         self.version
     }
+}
+
+impl std::fmt::Debug for Nd2File {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Nd2File")
+            .field("path", &self.path)
+            .field("version", &self.version)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Nd2File {
 
     /// Get image attributes
     fn attributes(&mut self) -> Result<&Attributes> {
@@ -117,7 +141,7 @@ impl Nd2File {
         Ok(self.experiment.as_ref().unwrap())
     }
 
-    /// Return a lightweight dataset overview aligned with other reader crates.
+    /// Return a lightweight dataset overview containing dimensions, channels, and scaling.
     pub fn summary(&mut self) -> Result<DatasetSummary> {
         let sizes = self.sizes()?;
         let attrs = self.attributes()?.clone();
@@ -144,7 +168,7 @@ impl Nd2File {
         Ok(DatasetSummary {
             version_major: self.version.0,
             version_minor: self.version.1,
-            sizes: sizes.into_iter().collect(),
+            sizes,
             logical_frame_count,
             channels,
             pixel_type,
@@ -157,9 +181,8 @@ impl Nd2File {
         read_chunk(&mut self.reader, &self.chunkmap, name)
     }
 
-    /// Dimensions (P,T,C,Z,Y,X) derived from attributes + experiment.
-    /// When experiment is empty, infers minimal structure from sequence_count.
-    fn sizes(&mut self) -> Result<HashMap<String, usize>> {
+    /// Returns the dataset dimension sizes (e.g. "X", "Y", "C", "Z", "T", "P").
+    pub fn sizes(&mut self) -> Result<BTreeMap<String, usize>> {
         let attrs = self.attributes()?.clone();
         let exp = self.experiment()?.clone();
 
@@ -173,7 +196,7 @@ impl Nd2File {
             }))
             .unwrap_or(0) as usize;
 
-        let mut sizes: HashMap<String, usize> = HashMap::new();
+        let mut sizes: BTreeMap<String, usize> = BTreeMap::new();
 
         if exp.is_empty() {
             // Fallback: assume P=1, Z=1, infer T from sequence_count
@@ -248,7 +271,9 @@ impl Nd2File {
         Ok(out)
     }
 
-    /// Read one frame by sequence index. Returns pixels as (C, Y, X) u16 data.
+    /// Read one logical frame by sequence index (0..logical_frame_count).
+    ///
+    /// Returns decoded pixels as planar (Channel, Height, Width) in row-major order.
     pub fn read_frame(&mut self, index: usize) -> Result<Vec<u16>> {
         let attrs = self.attributes()?.clone();
         let max_seq = attrs.sequence_count as usize;
@@ -622,7 +647,9 @@ impl Nd2File {
         Ok(Some(payload_offset))
     }
 
-    /// Read 2D Y×X frame at (p,t,c,z). Returns the Y×X pixels for the requested channel.
+    /// Read a 2D plane at the specified coordinates: Position (`p`), Time (`t`), Channel (`c`), and Z-slice (`z`).
+    ///
+    /// Returns decoded pixels as `Vec<u16>` in row-major order (Height x Width).
     pub fn read_frame_2d(&mut self, p: usize, t: usize, c: usize, z: usize) -> Result<Vec<u16>> {
         let sizes = self.sizes()?;
         let height = *sizes.get(AXIS_Y).ok_or_else(|| {
@@ -729,11 +756,5 @@ impl Nd2File {
         let minor = (data[5] as char).to_digit(10).unwrap_or(0);
 
         Ok((major, minor))
-    }
-}
-
-impl Drop for Nd2File {
-    fn drop(&mut self) {
-        // File is automatically closed when BufReader<File> is dropped
     }
 }

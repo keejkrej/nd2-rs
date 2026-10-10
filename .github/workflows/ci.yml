@@ -7,26 +7,41 @@ on:
 
 jobs:
   test:
-    name: Test
+    name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [stable]
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cache OME Fixtures
+        id: cache-fixtures
+        uses: actions/cache@v4
+        with:
+          path: tests/fixtures
+          key: ${{ runner.os }}-nd2-ome-fixtures-${{ hashFiles('scripts/download_ome_fixtures.sh') }}
+
+      - name: Download OME Test Fixtures
+        if: steps.cache-fixtures.outputs.cache-hit != 'true'
+        shell: bash
+        run: ./scripts/download_ome_fixtures.sh
+
       - name: Build
         run: cargo build --verbose
 
-      - name: Test (no fixture)
+      - name: Test (Unit, Integration, Doctests)
         run: cargo test --verbose
 
-  clippy:
-    name: Clippy
+  lint:
+    name: Clippy & Docs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,5 +51,11 @@ jobs:
         with:
           components: clippy
 
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
       - name: Clippy
         run: cargo clippy -- -D warnings
+
+      - name: Documentation
+        run: cargo doc --no-deps
