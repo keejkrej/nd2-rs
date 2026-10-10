@@ -1,21 +1,4 @@
-//! nd2: Pure Rust library for reading Nikon ND2 microscopy files
-//!
-//! This library provides functionality to read metadata from modern ND2 files
-//! (versions 2.0, 2.1, and 3.0) created by Nikon NIS Elements software.
-//!
-//! # Example
-//! ```no_run
-//! use nd2::Nd2File;
-//!
-//! fn main() -> nd2::Result<()> {
-//!     let mut nd2 = Nd2File::open("image.nd2")?;
-//!
-//!     println!("Version: {:?}", nd2.version());
-//!     println!("Summary: {:#?}", nd2.summary()?);
-//!
-//!     Ok(())
-//! }
-//! ```
+#![doc = include_str!("../README.md")]
 
 mod error;
 mod io;
@@ -28,7 +11,12 @@ mod meta_parse;
 mod parse;
 mod reader;
 
-pub use error::{Nd2Error, Result};
+pub use error::{
+    ErrorSource, FileError, InputError, InternalError, Nd2Error, Result, UnsupportedError,
+};
 pub use io::ReadSeek;
 pub use reader::Nd2File;
 pub use types::{DatasetSummary, SummaryChannel, SummaryScaling};
+
+/// Type alias for [`Nd2File`] for ergonomic and generic usage across reader libraries.
+pub type Reader = Nd2File;

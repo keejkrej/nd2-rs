@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
+#[allow(clippy::enum_variant_names)]
 pub enum ExpLoop {
     TimeLoop(TimeLoop),
     NETimeLoop(NETimeLoop),
