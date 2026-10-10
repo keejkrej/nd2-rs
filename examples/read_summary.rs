@@ -1,4 +1,4 @@
-use nd2_rs::{Nd2File, Result};
+use nd2::{Nd2File, Result};
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
